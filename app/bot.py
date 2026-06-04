@@ -311,6 +311,27 @@ async def cmd_meals(update: Update, context) -> None:
     await update.message.reply_text("\n".join(lines))
 
 
+async def cmd_help(update: Update, context) -> None:
+    await update.message.reply_text(
+        "📋 Verfügbare Befehle:\n\n"
+        "📅 *Termine*\n"
+        "/event — Neuen Termin erstellen\n"
+        "/skip — Beschreibung überspringen\n"
+        "/abbrechen — Eingabe abbrechen\n\n"
+        "🍽 *Menüplan*\n"
+        "/meal TT.MM Mahlzeit — Mahlzeit setzen\n"
+        "/meal TT.MM — Mahlzeit anzeigen\n"
+        "/delmeal TT.MM — Mahlzeit löschen\n"
+        "/meals — Menüplan diese Woche\n\n"
+        "📌 *Notizen*\n"
+        "/note Text — Notiz speichern\n\n"
+        "🔧 *Sonstiges*\n"
+        "/ping — Bot testen\n"
+        "/help — Diese Hilfe anzeigen",
+        parse_mode="Markdown",
+    )
+
+
 async def cmd_ping(update: Update, context) -> None:
     logger.info("PING received from %s", update.effective_user.id)
     await update.message.reply_text("pong")
@@ -320,6 +341,7 @@ def build_application() -> Application:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     # updater(None): we manage polling ourselves to avoid asyncio conflicts with uvicorn
     app = ApplicationBuilder().token(token).updater(None).build()
+    app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("ping", cmd_ping))
     app.add_handler(CommandHandler("note", cmd_note))
     app.add_handler(CommandHandler("meal", cmd_meal))
