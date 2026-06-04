@@ -21,6 +21,13 @@
     <div class="w-2/5 bg-gray-800 rounded-2xl p-6 flex flex-col min-h-0">
       <h2 class="text-3xl font-bold mb-4 text-blue-300">📅 Heute</h2>
       <div
+        id="panel-wetter"
+        hx-get="/api/weather"
+        hx-trigger="load, every 300s"
+        hx-swap="innerHTML"
+        hx-headers='{"HX-Request": "true"}'
+      ></div>
+      <div
         id="panel-heute"
         class="flex-1 overflow-y-auto"
         hx-get="/api/today"

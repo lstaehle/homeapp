@@ -22,6 +22,7 @@ from app.gcalendar import get_events_today, get_events_this_week
 from app.reminders import daily_reminder, register_jobs
 from app.scheduler import get_scheduler
 from app.todoist import complete_task, get_restock_items
+from app.weather import get_weather
 
 TZ = ZoneInfo("Europe/Zurich")
 GERMAN_DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
@@ -164,6 +165,25 @@ def _render_grocery_html(groups: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 # Core endpoints
 # ---------------------------------------------------------------------------
+
+@app.get("/api/weather")
+async def api_weather(request: Request):
+    try:
+        w = get_weather()
+    except Exception as exc:
+        logger.error("get_weather failed: %s", exc)
+        w = None
+    if not request.headers.get("HX-Request"):
+        return w or {}
+    if not w:
+        return HTMLResponse("")
+    return HTMLResponse(
+        f'<p class="text-xl text-gray-300 mb-3">'
+        f'{w["emoji"]} {w["temp"]}°C &nbsp;·&nbsp; {w["description"]} &nbsp;·&nbsp; '
+        f'<span class="text-gray-500">gefühlt {w["feels_like"]}°C</span>'
+        f'</p>'
+    )
+
 
 @app.get("/health")
 def health():
