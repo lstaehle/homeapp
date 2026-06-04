@@ -120,7 +120,7 @@ async def receive_duration(update: Update, context) -> int:
         )
         return DURATION
     await update.message.reply_text(
-        "Optionale Beschreibung? (oder /ueberspringen)"
+        "Optionale Beschreibung? (oder /skip)"
     )
     return DESCRIPTION
 
@@ -205,7 +205,7 @@ async def cmd_cancel(update: Update, context) -> int:
 def _build_conversation_handler() -> ConversationHandler:
     cancel = CommandHandler("abbrechen", cmd_cancel)
     return ConversationHandler(
-        entry_points=[CommandHandler("neuesevent", cmd_neuesevent)],
+        entry_points=[CommandHandler("event", cmd_neuesevent)],
         states={
             TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_title)],
             DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_date), cancel],
@@ -213,7 +213,7 @@ def _build_conversation_handler() -> ConversationHandler:
             DURATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_duration), cancel],
             DESCRIPTION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_description),
-                CommandHandler("ueberspringen", cmd_skip_description),
+                CommandHandler("skip", cmd_skip_description),
                 cancel,
             ],
             CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_confirm), cancel],
