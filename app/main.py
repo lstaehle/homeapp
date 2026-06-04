@@ -29,8 +29,8 @@ from app.todoist import complete_task, create_task, get_restock_items, get_secti
 from app.weather import get_weather, get_forecast
 from app.meals import (
     get_plan, set_meal, delete_meal,
-    get_meal_list, get_meal_names, add_to_meal_list, set_meal_ingredients,
-    get_pending_ingredients,
+    get_meal_list, get_meal_names, add_to_meal_list, delete_from_meal_list,
+    set_meal_ingredients, get_pending_ingredients,
 )
 
 
@@ -457,6 +457,12 @@ def api_todoist_sections():
 @app.put("/api/meals/config/{meal_name}")
 def api_set_meal_ingredients(meal_name: str, body: IngredientsBody):
     set_meal_ingredients(meal_name, [i.model_dump() for i in body.ingredients])
+    return {"ok": True}
+
+
+@app.delete("/api/meals/list/{meal_name}")
+def api_delete_meal_from_list(meal_name: str):
+    delete_from_meal_list(meal_name)
     return {"ok": True}
 
 

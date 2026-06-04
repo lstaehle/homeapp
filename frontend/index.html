@@ -56,6 +56,7 @@
         sections: [],
         selected: null,
         newIngredient: '',
+        newMealName: '',
         async openConfig() {
           const [configR, sectionsR] = await Promise.all([
             fetch('/api/meals/config'),
@@ -65,16 +66,35 @@
           this.sections = await sectionsR.json();
           this.selected = null;
           this.newIngredient = '';
+          this.newMealName = '';
           this.open = true;
         },
         selectMeal(meal) {
           this.selected = {name: meal.name, ingredients: meal.ingredients.map(i => ({...i}))};
           this.newIngredient = '';
         },
+        async addMeal() {
+          const name = this.newMealName.trim();
+          if (!name) return;
+          await fetch('/api/meals/list', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({meal: name})
+          });
+          this.meals.push({name, ingredients: []});
+          this.meals.sort((a, b) => a.name.localeCompare(b.name));
+          this.newMealName = '';
+        },
+        async removeMeal(mealName) {
+          await fetch('/api/meals/list/' + encodeURIComponent(mealName), {method: 'DELETE'});
+          this.meals = this.meals.filter(m => m.name !== mealName);
+          if (this.selected?.name === mealName) this.selected = null;
+        },
         async addIngredient() {
           const ing = this.newIngredient.trim();
           if (!ing || !this.selected) return;
           this.selected.ingredients.push({name: ing, section_id: null});
+          this.selected.ingredients.sort((a, b) => a.name.localeCompare(b.name));
           this.newIngredient = '';
           await this.save();
         },
@@ -143,17 +163,29 @@
     <div class="bg-gray-800 rounded-2xl shadow-2xl flex w-[720px] max-h-[80vh]" style="min-height:400px">
 
       <!-- Left: meal list -->
-      <div class="w-52 border-r border-gray-700 flex flex-col p-4">
+      <div class="w-56 border-r border-gray-700 flex flex-col p-4">
         <p class="text-lg font-bold mb-3">⚙️ Mahlzeiten</p>
         <div class="flex-1 overflow-y-auto space-y-1">
           <template x-for="meal in $store.mealConfig.meals" :key="meal.name">
-            <button @click="$store.mealConfig.selectMeal(meal)"
-                    :class="$store.mealConfig.selected?.name === meal.name
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 hover:bg-gray-600 text-gray-200'"
-                    class="w-full text-left rounded-lg px-3 py-2 text-base transition-colors"
-                    x-text="meal.name"></button>
+            <div class="flex items-center gap-1">
+              <button @click="$store.mealConfig.selectMeal(meal)"
+                      :class="$store.mealConfig.selected?.name === meal.name
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-700 hover:bg-gray-600 text-gray-200'"
+                      class="flex-1 text-left rounded-lg px-3 py-2 text-base transition-colors truncate"
+                      x-text="meal.name"></button>
+              <button @click="$store.mealConfig.removeMeal(meal.name)"
+                      class="text-gray-600 hover:text-red-400 text-lg leading-none flex-shrink-0 transition-colors">×</button>
+            </div>
           </template>
+        </div>
+        <div class="flex gap-1 mt-2 pt-2 border-t border-gray-700">
+          <input x-model="$store.mealConfig.newMealName"
+                 @keydown.enter="$store.mealConfig.addMeal()"
+                 placeholder="Neue Mahlzeit…"
+                 class="flex-1 bg-gray-700 rounded-lg px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-blue-500 min-w-0" />
+          <button @click="$store.mealConfig.addMeal()"
+                  class="bg-green-700 hover:bg-green-600 rounded-lg px-3 py-1 text-base transition-colors flex-shrink-0">+</button>
         </div>
       </div>
 

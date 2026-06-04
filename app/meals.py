@@ -83,12 +83,15 @@ def delete_meal(day: date) -> None:
 # ---------------------------------------------------------------------------
 
 def get_meal_list() -> list[dict]:
-    """Returns [{"name": str, "ingredients": [str]}]"""
-    return _load_list()
+    """Returns meals sorted A-Z, each with ingredients sorted A-Z."""
+    meals = _load_list()
+    for meal in meals:
+        meal["ingredients"] = sorted(meal["ingredients"], key=lambda i: i["name"].casefold())
+    return sorted(meals, key=lambda m: m["name"].casefold())
 
 
 def get_meal_names() -> list[str]:
-    return [m["name"] for m in _load_list()]
+    return [m["name"] for m in get_meal_list()]
 
 
 def add_to_meal_list(meal: str) -> None:
@@ -96,6 +99,11 @@ def add_to_meal_list(meal: str) -> None:
     if not any(m["name"] == meal for m in meals):
         meals.append({"name": meal, "ingredients": []})
         _save_list(meals)
+
+
+def delete_from_meal_list(meal_name: str) -> None:
+    meals = _load_list()
+    _save_list([m for m in meals if m["name"] != meal_name])
 
 
 def set_meal_ingredients(meal_name: str, ingredients: list[str]) -> None:
