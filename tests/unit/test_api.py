@@ -78,8 +78,14 @@ def test_week_endpoint_has_seven_days(client):
     assert len(r.json()["days"]) == 7
 
 
+GROCERY_ITEMS = [
+    {"id": "1", "content": "Milch"},
+    {"id": "2", "content": "Butter"},
+]
+
+
 def test_grocery_endpoint_returns_list(client):
-    with patch("app.main.get_restock_items", return_value=["Milch", "Butter"]):
+    with patch("app.main.get_restock_items", return_value=GROCERY_ITEMS):
         r = client.get("/api/grocery")
     assert r.status_code == 200
     assert isinstance(r.json(), list)
@@ -92,7 +98,15 @@ def test_grocery_endpoint_empty(client):
 
 
 def test_grocery_endpoint_item_format(client):
-    with patch("app.main.get_restock_items", return_value=["Milch", "Eier", "Käse"]):
+    with patch("app.main.get_restock_items", return_value=GROCERY_ITEMS):
         r = client.get("/api/grocery")
     for item in r.json():
-        assert isinstance(item, str)
+        assert {"id", "content"} <= item.keys()
+
+
+def test_complete_grocery_removes_item(client):
+    with patch("app.main.complete_task") as mock_complete:
+        r = client.post("/api/grocery/42/complete")
+    assert r.status_code == 200
+    assert r.text == ""
+    mock_complete.assert_called_once_with("42")

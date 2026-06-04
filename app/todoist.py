@@ -15,7 +15,7 @@ def _get(path: str, **params) -> dict:
     return r.json()
 
 
-def get_restock_items() -> list[str]:
+def get_restock_items() -> list[dict]:
     project_name = os.environ["TODOIST_PROJECT_NAME"]
 
     projects = _get("/projects")["results"]
@@ -24,4 +24,8 @@ def get_restock_items() -> list[str]:
         return []
 
     tasks = _get("/tasks", project_id=project["id"])["results"]
-    return [t["content"] for t in tasks]
+    return [{"id": t["id"], "content": t["content"]} for t in tasks]
+
+
+def complete_task(task_id: str) -> None:
+    httpx.post(f"{_BASE}/tasks/{task_id}/close", headers=_headers(), timeout=10).raise_for_status()

@@ -17,11 +17,14 @@ def test_get_restock_items_returns_task_names():
         return_value=httpx.Response(200, json={"results": [{"id": "123", "name": "Einkauf"}]})
     )
     respx.get("https://api.todoist.com/api/v1/tasks").mock(
-        return_value=httpx.Response(200, json={"results": [{"content": "Milch"}, {"content": "Butter"}]})
+        return_value=httpx.Response(200, json={"results": [
+            {"id": "1", "content": "Milch"},
+            {"id": "2", "content": "Butter"},
+        ]})
     )
 
     from app.todoist import get_restock_items
-    assert get_restock_items() == ["Milch", "Butter"]
+    assert get_restock_items() == [{"id": "1", "content": "Milch"}, {"id": "2", "content": "Butter"}]
 
 
 @respx.mock
@@ -33,14 +36,14 @@ def test_get_restock_items_filters_by_project():
         ]})
     )
     tasks_route = respx.get("https://api.todoist.com/api/v1/tasks").mock(
-        return_value=httpx.Response(200, json={"results": [{"content": "Kaffee"}]})
+        return_value=httpx.Response(200, json={"results": [{"id": "5", "content": "Kaffee"}]})
     )
 
     from app.todoist import get_restock_items
     result = get_restock_items()
 
     assert tasks_route.calls[0].request.url.params["project_id"] == "123"
-    assert result == ["Kaffee"]
+    assert result == [{"id": "5", "content": "Kaffee"}]
 
 
 @respx.mock
@@ -54,3 +57,15 @@ def test_get_restock_items_empty():
 
     from app.todoist import get_restock_items
     assert get_restock_items() == []
+
+
+@respx.mock
+def test_complete_task_calls_close_endpoint():
+    route = respx.post("https://api.todoist.com/api/v1/tasks/42/close").mock(
+        return_value=httpx.Response(204)
+    )
+
+    from app.todoist import complete_task
+    complete_task("42")
+
+    assert route.called

@@ -21,7 +21,7 @@ from app.bot import build_application
 from app.gcalendar import get_events_today, get_events_this_week
 from app.reminders import daily_reminder, register_jobs
 from app.scheduler import get_scheduler
-from app.todoist import get_restock_items
+from app.todoist import complete_task, get_restock_items
 
 TZ = ZoneInfo("Europe/Zurich")
 GERMAN_DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
@@ -135,10 +135,23 @@ def _render_week_html(data: dict) -> str:
     return "\n".join(lines)
 
 
-def _render_grocery_html(items: list[str]) -> str:
+def _render_grocery_html(items: list[dict]) -> str:
     if not items:
         return '<p class="text-xl text-gray-500">Keine Einträge.</p>'
-    rows = ["".join(f'<li class="text-xl py-1">• {item}</li>' for item in items)]
+    rows = []
+    for item in items:
+        rows.append(
+            f'<li id="grocery-{item["id"]}" class="flex items-center gap-3 py-2">'
+            f'<button'
+            f' hx-post="/api/grocery/{item["id"]}/complete"'
+            f' hx-target="closest li"'
+            f' hx-swap="outerHTML"'
+            f' class="w-8 h-8 rounded border-2 border-gray-500 flex-shrink-0'
+            f' hover:border-green-400 hover:bg-green-400/20 active:bg-green-400/40 transition-colors">'
+            f'</button>'
+            f'<span class="text-xl">{item["content"]}</span>'
+            f'</li>'
+        )
     return f'<ul class="space-y-1">{"".join(rows)}</ul>'
 
 
@@ -217,6 +230,15 @@ async def api_grocery(request: Request):
     if request.headers.get("HX-Request"):
         return HTMLResponse(_render_grocery_html(items))
     return items
+
+
+@app.post("/api/grocery/{task_id}/complete")
+async def complete_grocery(task_id: str):
+    try:
+        complete_task(task_id)
+    except Exception as exc:
+        logger.error("complete_task failed: %s", exc)
+    return HTMLResponse("")
 
 
 # Static files must be mounted last so API routes take precedence
