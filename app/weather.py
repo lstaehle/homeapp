@@ -42,6 +42,7 @@ def get_weather() -> dict | None:
         "latitude": lat,
         "longitude": lon,
         "current": "temperature_2m,apparent_temperature,weather_code",
+        "daily": "temperature_2m_max",
         "timezone": "Europe/Zurich",
     }
     elev = os.environ.get("WEATHER_ELEVATION", "").strip()
@@ -50,12 +51,15 @@ def get_weather() -> dict | None:
 
     r = httpx.get(_BASE, params=params, timeout=15)
     r.raise_for_status()
-    current = r.json()["current"]
+    data = r.json()
+    current = data["current"]
 
     emoji, description = _WMO.get(current["weather_code"], ("🌡️", "Unbekannt"))
+    daily_max = data["daily"]["temperature_2m_max"]
     return {
         "temp": round(current["temperature_2m"]),
         "feels_like": round(current["apparent_temperature"]),
+        "temp_max": round(daily_max[0]),
         "description": description,
         "emoji": emoji,
     }

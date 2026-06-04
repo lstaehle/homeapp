@@ -200,6 +200,7 @@ def api_weather(request: Request):
         f'<p class="text-xl text-gray-300 mb-3">'
         f'{w["emoji"]} {w["temp"]}°C &nbsp;·&nbsp; {w["description"]} &nbsp;·&nbsp; '
         f'<span class="text-gray-500">gefühlt {w["feels_like"]}°C</span>'
+        f'&nbsp;·&nbsp; <span class="text-orange-300">max {w["temp_max"]}°C</span>'
         f'</p>'
     )
 
