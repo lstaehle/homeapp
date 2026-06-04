@@ -23,10 +23,16 @@ def _get_project_id() -> str | None:
 
 
 def _get_completed_tasks(project_id: str) -> list[dict]:
-    """Best-effort: returns [] on any error."""
+    """Fetches completed tasks via Sync API. Returns [] on any error."""
     try:
-        data = _get("/tasks/completed/get_all", project_id=project_id, limit=200)
-        raw = data.get("items") or data.get("results") or []
+        r = httpx.get(
+            "https://api.todoist.com/sync/v9/items/completed/get_all",
+            headers=_headers(),
+            params={"project_id": project_id, "limit": 200},
+            timeout=10,
+        )
+        r.raise_for_status()
+        raw = r.json().get("items") or []
         return [
             {
                 "id": str(t.get("task_id") or t.get("id") or ""),
@@ -59,15 +65,23 @@ def get_restock_items() -> list[dict]:
         sid = t.get("section_id") or None
         completed_by_section.setdefault(sid, []).append({"content": t["content"]})
 
-    all_sids = set(by_section.keys()) | set(completed_by_section.keys())
-
+    # Build result: iterate active sections first, then append completed-only sections
     result = []
-    for sid in all_sids:
+    seen: set = set()
+    for sid, items in by_section.items():
+        seen.add(sid)
         result.append({
             "section": sections.get(sid) if sid else None,
-            "items": by_section.get(sid, []),
+            "items": items,
             "completed": completed_by_section.get(sid, []),
         })
+    for sid, items in completed_by_section.items():
+        if sid not in seen:
+            result.append({
+                "section": sections.get(sid) if sid else None,
+                "items": [],
+                "completed": items,
+            })
 
     result.sort(key=lambda g: (g["section"] is None, g["section"] or ""))
     return result
@@ -103,7 +117,7 @@ def get_all_task_names() -> list[str]:
         active = [t["content"] for t in _get("/tasks", project_id=project_id)["results"]]
     except Exception:
         active = []
-    completed = [t["content"] for t in _get_completed_tasks(project_id)]
+    completed = [t["content"] for t in _get_completed_tasks(project_id)]  # uses Sync API
     seen: set[str] = set()
     result = []
     for name in active + completed:
