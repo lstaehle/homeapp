@@ -47,11 +47,18 @@ def complete_task(task_id: str) -> None:
     httpx.post(f"{_BASE}/tasks/{task_id}/close", headers=_headers(), timeout=10).raise_for_status()
 
 
-def create_task(content: str) -> None:
+def get_sections() -> list[dict]:
+    """Returns [{"id": str, "name": str}] for the grocery project."""
     project_id = _get_project_id()
-    httpx.post(
-        f"{_BASE}/tasks",
-        headers=_headers(),
-        json={"content": content, "project_id": project_id},
-        timeout=10,
-    ).raise_for_status()
+    if not project_id:
+        return []
+    results = _get("/sections", project_id=project_id)["results"]
+    return [{"id": s["id"], "name": s["name"]} for s in results]
+
+
+def create_task(content: str, section_id: str | None = None) -> None:
+    project_id = _get_project_id()
+    body: dict = {"content": content, "project_id": project_id}
+    if section_id:
+        body["section_id"] = section_id
+    httpx.post(f"{_BASE}/tasks", headers=_headers(), json=body, timeout=10).raise_for_status()

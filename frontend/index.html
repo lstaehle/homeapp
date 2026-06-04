@@ -53,29 +53,38 @@
       Alpine.store('mealConfig', {
         open: false,
         meals: [],
+        sections: [],
         selected: null,
         newIngredient: '',
         async openConfig() {
-          const r = await fetch('/api/meals/config');
-          this.meals = await r.json();
+          const [configR, sectionsR] = await Promise.all([
+            fetch('/api/meals/config'),
+            fetch('/api/todoist/sections')
+          ]);
+          this.meals = await configR.json();
+          this.sections = await sectionsR.json();
           this.selected = null;
           this.newIngredient = '';
           this.open = true;
         },
         selectMeal(meal) {
-          this.selected = {name: meal.name, ingredients: [...meal.ingredients]};
+          this.selected = {name: meal.name, ingredients: meal.ingredients.map(i => ({...i}))};
           this.newIngredient = '';
         },
         async addIngredient() {
           const ing = this.newIngredient.trim();
           if (!ing || !this.selected) return;
-          this.selected.ingredients.push(ing);
+          this.selected.ingredients.push({name: ing, section_id: null});
           this.newIngredient = '';
           await this.save();
         },
         async removeIngredient(i) {
           this.selected.ingredients.splice(i, 1);
           await this.save();
+        },
+        setSection(i, sectionId) {
+          this.selected.ingredients[i].section_id = sectionId || null;
+          this.save();
         },
         async save() {
           await fetch('/api/meals/config/' + encodeURIComponent(this.selected.name), {
@@ -84,7 +93,7 @@
             body: JSON.stringify({ingredients: this.selected.ingredients})
           });
           const m = this.meals.find(m => m.name === this.selected.name);
-          if (m) m.ingredients = [...this.selected.ingredients];
+          if (m) m.ingredients = this.selected.ingredients.map(i => ({...i}));
         }
       });
     });
@@ -131,7 +140,7 @@
   <div x-data x-show="$store.mealConfig.open" x-cloak
        @click.self="$store.mealConfig.open = false"
        class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
-    <div class="bg-gray-800 rounded-2xl shadow-2xl flex w-[640px] max-h-[80vh]" style="min-height:400px">
+    <div class="bg-gray-800 rounded-2xl shadow-2xl flex w-[720px] max-h-[80vh]" style="min-height:400px">
 
       <!-- Left: meal list -->
       <div class="w-52 border-r border-gray-700 flex flex-col p-4">
@@ -157,10 +166,19 @@
           <p class="text-xl font-bold mb-3" x-text="$store.mealConfig.selected?.name"></p>
           <div class="flex-1 overflow-y-auto mb-3 space-y-1">
             <template x-for="(ing, i) in $store.mealConfig.selected?.ingredients ?? []" :key="i">
-              <div class="flex items-center justify-between bg-gray-700 rounded-lg px-3 py-2">
-                <span class="text-base" x-text="ing"></span>
+              <div class="flex items-center gap-2 bg-gray-700 rounded-lg px-3 py-2">
+                <span class="text-base flex-1" x-text="ing.name"></span>
+                <select @change="$store.mealConfig.setSection(i, $event.target.value)"
+                        class="bg-gray-600 rounded-lg px-2 py-1 text-sm text-gray-200 max-w-[130px]">
+                  <option value="">Kein Bereich</option>
+                  <template x-for="sec in $store.mealConfig.sections" :key="sec.id">
+                    <option :value="sec.id"
+                            :selected="ing.section_id === sec.id"
+                            x-text="sec.name"></option>
+                  </template>
+                </select>
                 <button @click="$store.mealConfig.removeIngredient(i)"
-                        class="text-gray-500 hover:text-red-400 text-lg leading-none ml-2">×</button>
+                        class="text-gray-500 hover:text-red-400 text-lg leading-none flex-shrink-0">×</button>
               </div>
             </template>
             <p x-show="($store.mealConfig.selected?.ingredients ?? []).length === 0"

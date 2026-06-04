@@ -40,9 +40,15 @@ def _load_list() -> list[dict]:
     if not _LIST_FILE.exists():
         return [{"name": m, "ingredients": []} for m in _DEFAULT_MEAL_NAMES]
     data = json.loads(_LIST_FILE.read_text())
-    # Migrate from old flat-string format
+    # Migrate flat string meal list
     if data and isinstance(data[0], str):
         return [{"name": m, "ingredients": []} for m in data]
+    # Migrate string ingredients → {"name": str, "section_id": None}
+    for meal in data:
+        meal["ingredients"] = [
+            ing if isinstance(ing, dict) else {"name": ing, "section_id": None}
+            for ing in meal.get("ingredients", [])
+        ]
     return data
 
 

@@ -25,7 +25,7 @@ from app.gcalendar import get_events_today, get_events_this_week, get_events_ran
 from app.reminders import daily_reminder, register_jobs
 from app.scheduler import get_scheduler
 from app.notes import add_note, delete_note, get_notes
-from app.todoist import complete_task, create_task, get_restock_items
+from app.todoist import complete_task, create_task, get_restock_items, get_sections
 from app.weather import get_weather, get_forecast
 from app.meals import (
     get_plan, set_meal, delete_meal,
@@ -217,12 +217,15 @@ def _render_grocery_html(groups: list[dict], pending: list[dict] | None = None) 
                 f'<ul class="space-y-1">'
             )
             for ing in p["ingredients"]:
-                encoded = urlquote(ing, safe='')
+                name = ing["name"]
+                section_id = ing.get("section_id") or ""
+                encoded = urlquote(name, safe='')
+                section_param = f"?section_id={section_id}" if section_id else ""
                 parts.append(
                     f'<li class="flex items-center justify-between gap-2">'
-                    f'<span class="text-base text-gray-200">• {ing}</span>'
+                    f'<span class="text-base text-gray-200">• {name}</span>'
                     f'<button'
-                    f' hx-post="/api/grocery/item/{encoded}"'
+                    f' hx-post="/api/grocery/item/{encoded}{section_param}"'
                     f' hx-target="closest li"'
                     f' hx-swap="outerHTML"'
                     f' class="text-purple-400 hover:text-green-400 text-xl leading-none flex-shrink-0'
@@ -433,20 +436,34 @@ def api_meals_config():
     return get_meal_list()
 
 
+class IngredientItem(BaseModel):
+    name: str
+    section_id: str | None = None
+
+
 class IngredientsBody(BaseModel):
-    ingredients: list[str]
+    ingredients: list[IngredientItem]
+
+
+@app.get("/api/todoist/sections")
+def api_todoist_sections():
+    try:
+        return get_sections()
+    except Exception as exc:
+        logger.error("get_sections failed: %s", exc)
+        return []
 
 
 @app.put("/api/meals/config/{meal_name}")
 def api_set_meal_ingredients(meal_name: str, body: IngredientsBody):
-    set_meal_ingredients(meal_name, body.ingredients)
+    set_meal_ingredients(meal_name, [i.model_dump() for i in body.ingredients])
     return {"ok": True}
 
 
 @app.post("/api/grocery/item/{content}")
-def api_add_grocery_item(content: str):
+def api_add_grocery_item(content: str, section_id: str | None = None):
     try:
-        create_task(content)
+        create_task(content, section_id or None)
     except Exception as exc:
         logger.error("create_task failed for %r: %s", content, exc)
     return HTMLResponse(
