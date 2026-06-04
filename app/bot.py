@@ -23,7 +23,7 @@ from app.gcalendar import create_event
 TZ = ZoneInfo("Europe/Zurich")
 
 # Conversation states
-TITLE, DATE, TIME_STATE, DURATION, DESCRIPTION, CONFIRM = range(6)
+DATE_TITLE, TITLE, TIME_STATE, DURATION, DESCRIPTION, CONFIRM = range(6)
 
 
 class DurationResult(NamedTuple):
@@ -34,6 +34,14 @@ class DurationResult(NamedTuple):
 # ---------------------------------------------------------------------------
 # Pure parse helpers — no Telegram dependency, fully unit-testable
 # ---------------------------------------------------------------------------
+
+def parse_date_and_title(text: str) -> tuple[date, str | None]:
+    """Parse 'TT.MM[.JJJJ] [optionaler Titel]' — returns (date, title or None)."""
+    parts = text.strip().split(None, 1)
+    parsed = parse_date(parts[0])
+    title = parts[1].strip() if len(parts) > 1 else None
+    return parsed, title
+
 
 def parse_date(text: str) -> date:
     parts = text.strip().split(".")
@@ -79,24 +87,32 @@ def parse_duration(text: str) -> DurationResult:
 # ---------------------------------------------------------------------------
 
 async def cmd_neuesevent(update: Update, context) -> int:
+    await update.message.reply_text(
+        "Datum eingeben (TT.MM oder TT.MM.JJJJ), optional gefolgt vom Titel:\n"
+        "Beispiel: 25.12 Familien-Weihnachten"
+    )
+    return DATE_TITLE
+
+
+async def receive_date_and_title(update: Update, context) -> int:
+    try:
+        event_date, title = parse_date_and_title(update.message.text)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Ungültiges Datum. Bitte im Format TT.MM oder TT.MM.JJJJ eingeben (z.B. 25.12):"
+        )
+        return DATE_TITLE
+    context.user_data["date"] = event_date
+    if title:
+        context.user_data["title"] = title
+        await update.message.reply_text("Um wie viel Uhr? (Format: HH:MM)")
+        return TIME_STATE
     await update.message.reply_text("Wie soll der Termin heißen?")
     return TITLE
 
 
 async def receive_title(update: Update, context) -> int:
     context.user_data["title"] = update.message.text.strip()
-    await update.message.reply_text("An welchem Datum? (Format: TT.MM oder TT.MM.JJJJ)")
-    return DATE
-
-
-async def receive_date(update: Update, context) -> int:
-    try:
-        context.user_data["date"] = parse_date(update.message.text)
-    except ValueError:
-        await update.message.reply_text(
-            "❌ Ungültiges Datum. Bitte im Format TT.MM oder TT.MM.JJJJ eingeben (z.B. 25.12):"
-        )
-        return DATE
     await update.message.reply_text("Um wie viel Uhr? (Format: HH:MM)")
     return TIME_STATE
 
@@ -211,8 +227,8 @@ def _build_conversation_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[CommandHandler("event", cmd_neuesevent)],
         states={
-            TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_title)],
-            DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_date), cancel],
+            DATE_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_date_and_title), cancel],
+            TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_title), cancel],
             TIME_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_time), cancel],
             DURATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_duration), cancel],
             DESCRIPTION: [

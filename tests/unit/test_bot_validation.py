@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.bot import DurationResult, parse_date, parse_duration, parse_time
+from app.bot import DurationResult, parse_date, parse_date_and_title, parse_duration, parse_time
 
 
 def test_parse_date_valid():
@@ -25,6 +25,26 @@ def test_parse_date_invalid_format():
 def test_parse_date_out_of_range():
     with pytest.raises(ValueError):
         parse_date("32.13.2026")
+
+
+def test_parse_date_and_title_with_title():
+    d, title = parse_date_and_title("25.12.2026 Familien-Weihnachten")
+    assert d == date(2026, 12, 25)
+    assert title == "Familien-Weihnachten"
+
+
+def test_parse_date_and_title_without_title():
+    d, title = parse_date_and_title("25.12.2026")
+    assert d == date(2026, 12, 25)
+    assert title is None
+
+
+def test_parse_date_and_title_short_date_with_title():
+    with patch("app.bot.datetime") as mock_dt:
+        mock_dt.now.return_value.year = 2026
+        d, title = parse_date_and_title("25.12 Geburtstag")
+    assert d == date(2026, 12, 25)
+    assert title == "Geburtstag"
 
 
 def test_parse_time_valid():
