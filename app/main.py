@@ -208,8 +208,11 @@ async def api_week(request: Request):
     except Exception as exc:
         logger.error("get_events_this_week failed: %s", exc)
         events = []
+    today = datetime.now(TZ).date()
     days = []
     for day in _week_days():
+        if day <= today:
+            continue
         day_events = [
             {"title": e["title"], "time": _event_time_str(e), "location": e["location"]}
             for e in events

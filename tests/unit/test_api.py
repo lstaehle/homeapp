@@ -72,10 +72,15 @@ def test_week_endpoint_structure(client):
         assert {"date", "weekday", "events"} <= day.keys()
 
 
-def test_week_endpoint_has_seven_days(client):
+def test_week_endpoint_excludes_today(client):
     with patch("app.main.get_events_this_week", return_value=[]):
         r = client.get("/api/week")
-    assert len(r.json()["days"]) == 7
+    from datetime import date
+    import app.main as m
+    today_str = __import__("datetime").datetime.now(m.TZ).date().strftime("%d.%m.%Y")
+    dates = [d["date"] for d in r.json()["days"]]
+    assert today_str not in dates
+    assert len(dates) <= 6
 
 
 GROCERY_GROUPS = [
