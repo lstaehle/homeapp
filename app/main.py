@@ -18,6 +18,7 @@ async def lifespan(app: FastAPI):
     bot_app = build_application()
     await bot_app.initialize()
     await bot_app.start()
+    await bot_app.updater.start_polling()
 
     register_jobs(bot_app.bot)
     get_scheduler().start()
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI):
     yield
 
     get_scheduler().shutdown()
+    await bot_app.updater.stop()
     await bot_app.stop()
     await bot_app.shutdown()
 

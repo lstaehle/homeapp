@@ -87,14 +87,28 @@ def get_events_this_week() -> list[dict]:
     return [_parse_event(e) for e in result.get("items", [])]
 
 
-def create_event(title: str, start_dt: datetime, end_dt: datetime, description: str = "") -> dict:
+def create_event(
+    title: str,
+    start_dt: datetime,
+    end_dt: datetime,
+    description: str = "",
+    all_day: bool = False,
+) -> dict:
     service = _get_service()
-    body = {
-        "summary": title,
-        "description": description,
-        "start": {"dateTime": start_dt.isoformat(), "timeZone": "Europe/Zurich"},
-        "end": {"dateTime": end_dt.isoformat(), "timeZone": "Europe/Zurich"},
-    }
+    if all_day:
+        body = {
+            "summary": title,
+            "description": description,
+            "start": {"date": start_dt.date().isoformat()},
+            "end": {"date": start_dt.date().isoformat()},
+        }
+    else:
+        body = {
+            "summary": title,
+            "description": description,
+            "start": {"dateTime": start_dt.isoformat(), "timeZone": "Europe/Zurich"},
+            "end": {"dateTime": end_dt.isoformat(), "timeZone": "Europe/Zurich"},
+        }
     return service.events().insert(calendarId="primary", body=body).execute()
 
 
