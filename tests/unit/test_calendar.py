@@ -25,14 +25,14 @@ def _mock_service(items: list) -> MagicMock:
     return service
 
 
-@patch("app.calendar._get_service")
+@patch("app.gcalendar._get_service")
 def test_get_events_today_returns_list(mock_get_service):
     mock_get_service.return_value = _mock_service([
         _make_event("Arzttermin", location="Praxis Muster"),
         _make_event("Schule abholen"),
     ])
 
-    from app.calendar import get_events_today
+    from app.gcalendar import get_events_today
 
     result = get_events_today()
 
@@ -42,16 +42,16 @@ def test_get_events_today_returns_list(mock_get_service):
         assert set(event.keys()) >= {"title", "start", "end", "location"}
 
 
-@patch("app.calendar._get_service")
+@patch("app.gcalendar._get_service")
 def test_get_events_today_empty(mock_get_service):
     mock_get_service.return_value = _mock_service([])
 
-    from app.calendar import get_events_today
+    from app.gcalendar import get_events_today
 
     assert get_events_today() == []
 
 
-@patch("app.calendar._get_service")
+@patch("app.gcalendar._get_service")
 def test_get_events_this_week_time_range(mock_get_service):
     service = MagicMock()
     captured = {}
@@ -65,7 +65,7 @@ def test_get_events_this_week_time_range(mock_get_service):
     service.events().list = MagicMock(side_effect=fake_list)
     mock_get_service.return_value = service
 
-    from app.calendar import get_events_this_week
+    from app.gcalendar import get_events_this_week
 
     get_events_this_week()
 
@@ -78,13 +78,13 @@ def test_get_events_this_week_time_range(mock_get_service):
     assert time_max.hour == 23 and time_max.minute == 59
 
 
-@patch("app.calendar._get_service")
+@patch("app.gcalendar._get_service")
 def test_event_with_missing_location(mock_get_service):
     mock_get_service.return_value = _mock_service([
         _make_event("Kein Ort"),  # no location key
     ])
 
-    from app.calendar import get_events_today
+    from app.gcalendar import get_events_today
 
     result = get_events_today()
 
