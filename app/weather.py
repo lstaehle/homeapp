@@ -2,7 +2,7 @@ import os
 
 import httpx
 
-_BASE = "https://api.open-meteo.com/v1/forecast"
+_BASE = "http://api.open-meteo.com/v1/forecast"
 
 _WMO = {
     0:  ("☀️",  "Klar"),
