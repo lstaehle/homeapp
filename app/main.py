@@ -4,6 +4,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
+from urllib.parse import quote as urlquote
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ from app.weather import get_weather, get_forecast
 from app.meals import (
     get_plan, set_meal, delete_meal,
     get_meal_list, get_meal_names, add_to_meal_list, set_meal_ingredients,
-    get_pending_ingredients, mark_ingredients_sent,
+    get_pending_ingredients,
 )
 
 
@@ -213,22 +214,22 @@ def _render_grocery_html(groups: list[dict], pending: list[dict] | None = None) 
             parts.append(
                 f'<div class="mb-3 bg-gray-700/50 rounded-xl p-3">'
                 f'<p class="text-sm text-gray-400 mb-1">{p["label"]} — {p["meal"]}</p>'
-                f'<ul class="mb-2 space-y-0.5">'
+                f'<ul class="space-y-1">'
             )
             for ing in p["ingredients"]:
-                parts.append(f'<li class="text-base text-gray-200">• {ing}</li>')
-            parts.append(
-                f'</ul>'
-                f'<button'
-                f' hx-post="/api/grocery/pending/{p["date"]}/confirm"'
-                f' hx-target="#panel-einkauf"'
-                f' hx-swap="innerHTML"'
-                f' hx-headers=\'{{"HX-Request": "true"}}\''
-                f' class="text-sm text-purple-400 hover:text-purple-200 transition-colors">'
-                f'+ Zur Einkaufsliste hinzufügen'
-                f'</button>'
-                f'</div>'
-            )
+                encoded = urlquote(ing, safe='')
+                parts.append(
+                    f'<li class="flex items-center justify-between gap-2">'
+                    f'<span class="text-base text-gray-200">• {ing}</span>'
+                    f'<button'
+                    f' hx-post="/api/grocery/item/{encoded}"'
+                    f' hx-target="closest li"'
+                    f' hx-swap="outerHTML"'
+                    f' class="text-purple-400 hover:text-green-400 text-xl leading-none flex-shrink-0'
+                    f' transition-colors">+</button>'
+                    f'</li>'
+                )
+            parts.append(f'</ul></div>')
         parts.append('</div>')
         if groups:
             parts.append('<hr class="border-gray-700 mb-3">')
@@ -442,27 +443,18 @@ def api_set_meal_ingredients(meal_name: str, body: IngredientsBody):
     return {"ok": True}
 
 
-@app.post("/api/grocery/pending/{day}/confirm")
-def api_confirm_pending(day: str, request: Request):
-    pending = get_pending_ingredients()
-    for p in pending:
-        if p["date"] == day:
-            for ingredient in p["ingredients"]:
-                try:
-                    create_task(ingredient)
-                except Exception as exc:
-                    logger.error("create_task failed for %r: %s", ingredient, exc)
-            mark_ingredients_sent(day)
-            break
+@app.post("/api/grocery/item/{content}")
+def api_add_grocery_item(content: str):
     try:
-        items = get_restock_items()
+        create_task(content)
     except Exception as exc:
-        logger.error("get_restock_items failed: %s", exc)
-        items = []
-    remaining_pending = get_pending_ingredients()
-    if request.headers.get("HX-Request"):
-        return HTMLResponse(_render_grocery_html(items, remaining_pending))
-    return {"ok": True}
+        logger.error("create_task failed for %r: %s", content, exc)
+    return HTMLResponse(
+        f'<li class="flex items-center justify-between gap-2">'
+        f'<span class="text-base text-gray-500 line-through">• {content}</span>'
+        f'<span class="text-green-400 text-sm">✓</span>'
+        f'</li>'
+    )
 
 
 @app.post("/api/meals/plan/{day}")
