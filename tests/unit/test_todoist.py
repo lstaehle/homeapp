@@ -1,21 +1,8 @@
 import os
-from unittest.mock import MagicMock, patch
 
 import pytest
-
-
-def _make_project(name: str, project_id: str = "123") -> MagicMock:
-    p = MagicMock()
-    p.name = name
-    p.id = project_id
-    return p
-
-
-def _make_task(content: str, project_id: str = "123") -> MagicMock:
-    t = MagicMock()
-    t.content = content
-    t.project_id = project_id
-    return t
+import respx
+import httpx
 
 
 @pytest.fixture(autouse=True)
@@ -24,48 +11,46 @@ def env_vars(monkeypatch):
     monkeypatch.setenv("TODOIST_PROJECT_NAME", "Einkauf")
 
 
-@patch("app.todoist.TodoistAPI")
-def test_get_restock_items_returns_task_names(mock_api_cls):
-    api = MagicMock()
-    api.get_projects.return_value = [_make_project("Einkauf", "123")]
-    api.get_tasks.return_value = [
-        _make_task("Milch"),
-        _make_task("Butter"),
-    ]
-    mock_api_cls.return_value = api
+@respx.mock
+def test_get_restock_items_returns_task_names():
+    respx.get("https://api.todoist.com/rest/v2/projects").mock(
+        return_value=httpx.Response(200, json=[{"id": "123", "name": "Einkauf"}])
+    )
+    respx.get("https://api.todoist.com/rest/v2/tasks").mock(
+        return_value=httpx.Response(200, json=[{"content": "Milch"}, {"content": "Butter"}])
+    )
 
     from app.todoist import get_restock_items
-
-    result = get_restock_items()
-
-    assert result == ["Milch", "Butter"]
+    assert get_restock_items() == ["Milch", "Butter"]
 
 
-@patch("app.todoist.TodoistAPI")
-def test_get_restock_items_filters_by_project(mock_api_cls):
-    api = MagicMock()
-    api.get_projects.return_value = [
-        _make_project("Einkauf", "123"),
-        _make_project("Arbeit", "999"),
-    ]
-    api.get_tasks.return_value = [_make_task("Kaffee", "123")]
-    mock_api_cls.return_value = api
+@respx.mock
+def test_get_restock_items_filters_by_project():
+    respx.get("https://api.todoist.com/rest/v2/projects").mock(
+        return_value=httpx.Response(200, json=[
+            {"id": "123", "name": "Einkauf"},
+            {"id": "999", "name": "Arbeit"},
+        ])
+    )
+    tasks_route = respx.get("https://api.todoist.com/rest/v2/tasks").mock(
+        return_value=httpx.Response(200, json=[{"content": "Kaffee"}])
+    )
 
     from app.todoist import get_restock_items
-
     result = get_restock_items()
 
-    api.get_tasks.assert_called_once_with(project_id="123")
+    assert tasks_route.calls[0].request.url.params["project_id"] == "123"
     assert result == ["Kaffee"]
 
 
-@patch("app.todoist.TodoistAPI")
-def test_get_restock_items_empty(mock_api_cls):
-    api = MagicMock()
-    api.get_projects.return_value = [_make_project("Einkauf", "123")]
-    api.get_tasks.return_value = []
-    mock_api_cls.return_value = api
+@respx.mock
+def test_get_restock_items_empty():
+    respx.get("https://api.todoist.com/rest/v2/projects").mock(
+        return_value=httpx.Response(200, json=[{"id": "123", "name": "Einkauf"}])
+    )
+    respx.get("https://api.todoist.com/rest/v2/tasks").mock(
+        return_value=httpx.Response(200, json=[])
+    )
 
     from app.todoist import get_restock_items
-
     assert get_restock_items() == []
