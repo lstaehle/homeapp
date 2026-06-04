@@ -14,11 +14,11 @@
 </head>
 <body class="bg-gray-900 text-white h-screen overflow-hidden flex flex-col select-none">
 
-  <!-- Three-panel layout -->
+  <!-- Four-panel layout -->
   <div class="flex flex-1 gap-4 p-4 min-h-0">
 
-    <!-- Heute (40%) -->
-    <div class="w-2/5 bg-gray-800 rounded-2xl p-6 flex flex-col min-h-0">
+    <!-- Heute (30%) -->
+    <div class="flex-[3] bg-gray-800 rounded-2xl p-6 flex flex-col min-h-0">
       <h2 class="text-3xl font-bold mb-4 text-blue-300">📅 Heute</h2>
       <div
         id="panel-wetter"
@@ -39,8 +39,8 @@
       </div>
     </div>
 
-    <!-- Diese Woche (40%) -->
-    <div class="w-2/5 bg-gray-800 rounded-2xl p-6 flex flex-col min-h-0">
+    <!-- Diese Woche (30%) -->
+    <div class="flex-[3] bg-gray-800 rounded-2xl p-6 flex flex-col min-h-0">
       <h2 class="text-3xl font-bold mb-4 text-green-300">🗓 Diese Woche</h2>
       <div
         id="panel-woche"
@@ -55,7 +55,7 @@
     </div>
 
     <!-- Einkauf (20%) -->
-    <div class="w-1/5 bg-gray-800 rounded-2xl p-6 flex flex-col min-h-0">
+    <div class="flex-[2] bg-gray-800 rounded-2xl p-6 flex flex-col min-h-0">
       <h2 class="text-3xl font-bold mb-4 text-yellow-300">🛒 Einkauf</h2>
       <div
         id="panel-einkauf"
@@ -66,6 +66,21 @@
         hx-headers='{"HX-Request": "true"}'
       >
         <p class="text-xl text-gray-500 animate-pulse">Laden…</p>
+      </div>
+    </div>
+
+    <!-- Notizen (20%) -->
+    <div class="flex-[2] bg-gray-800 rounded-2xl p-6 flex flex-col min-h-0">
+      <h2 class="text-3xl font-bold mb-4 text-pink-300">📌 Notizen</h2>
+      <div
+        id="panel-notizen"
+        class="flex-1 overflow-y-auto"
+        hx-get="/api/notes"
+        hx-trigger="load, every 300s"
+        hx-swap="innerHTML"
+        hx-headers='{"HX-Request": "true"}'
+      >
+        <p class="text-lg text-gray-500 animate-pulse">Laden…</p>
       </div>
     </div>
 

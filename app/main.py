@@ -21,6 +21,7 @@ from app.bot import build_application
 from app.gcalendar import get_events_today, get_events_this_week
 from app.reminders import daily_reminder, register_jobs
 from app.scheduler import get_scheduler
+from app.notes import add_note, delete_note, get_notes
 from app.todoist import complete_task, get_restock_items
 from app.weather import get_weather
 
@@ -134,6 +135,24 @@ def _render_week_html(data: dict) -> str:
     if not lines:
         lines.append('<p class="text-xl text-gray-500">Diese Woche keine Termine.</p>')
     return "\n".join(lines)
+
+
+def _render_notes_html(notes: list[dict]) -> str:
+    if not notes:
+        return '<p class="text-lg text-gray-500">Keine Notizen.</p>'
+    parts = []
+    for note in notes:
+        parts.append(
+            f'<div id="note-{note["id"]}" class="bg-gray-700 rounded-xl p-3 mb-2">'
+            f'<div class="flex justify-between items-start gap-2">'
+            f'<p class="text-lg leading-snug flex-1">{note["text"]}</p>'
+            f'<button hx-delete="/api/notes/{note["id"]}" hx-target="#note-{note["id"]}" hx-swap="outerHTML"'
+            f' class="text-gray-500 hover:text-red-400 text-2xl leading-none flex-shrink-0">×</button>'
+            f'</div>'
+            f'<p class="text-xs text-gray-500 mt-1">{note["author"]} · {note["created_at"]}</p>'
+            f'</div>'
+        )
+    return "".join(parts)
 
 
 def _render_grocery_html(groups: list[dict]) -> str:
@@ -259,6 +278,20 @@ async def api_grocery(request: Request):
     if request.headers.get("HX-Request"):
         return HTMLResponse(_render_grocery_html(items))
     return items
+
+
+@app.get("/api/notes")
+async def api_notes(request: Request):
+    notes = get_notes()
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(_render_notes_html(notes))
+    return notes
+
+
+@app.delete("/api/notes/{note_id}")
+async def api_delete_note(note_id: str):
+    delete_note(note_id)
+    return HTMLResponse("")
 
 
 @app.post("/api/grocery/{task_id}/complete")

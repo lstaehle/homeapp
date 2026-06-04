@@ -19,6 +19,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 from app.gcalendar import create_event
+from app.notes import add_note
 
 TZ = ZoneInfo("Europe/Zurich")
 
@@ -246,6 +247,16 @@ async def _error_handler(update: object, context) -> None:
     logger.error("PTB error", exc_info=context.error)
 
 
+async def cmd_note(update: Update, context) -> None:
+    text = " ".join(context.args).strip()
+    if not text:
+        await update.message.reply_text("Bitte einen Text angeben, z.B.: /note Milch kaufen nicht vergessen")
+        return
+    author = update.effective_user.first_name or ""
+    add_note(text, author)
+    await update.message.reply_text(f"📌 Notiz gespeichert: {text}")
+
+
 async def cmd_ping(update: Update, context) -> None:
     logger.info("PING received from %s", update.effective_user.id)
     await update.message.reply_text("pong")
@@ -256,6 +267,7 @@ def build_application() -> Application:
     # updater(None): we manage polling ourselves to avoid asyncio conflicts with uvicorn
     app = ApplicationBuilder().token(token).updater(None).build()
     app.add_handler(CommandHandler("ping", cmd_ping))
+    app.add_handler(CommandHandler("note", cmd_note))
     app.add_handler(_build_conversation_handler())
     app.add_error_handler(_error_handler)
     return app
