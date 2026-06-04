@@ -61,8 +61,9 @@ def format_weekly_message(events: list[dict]) -> str:
 
 async def _send_to_both(bot: Bot, message: str) -> None:
     for env_key in ("TELEGRAM_CHAT_ID_1", "TELEGRAM_CHAT_ID_2"):
-        chat_id = os.environ[env_key]
-        await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+        chat_id = os.environ.get(env_key, "").strip()
+        if chat_id:
+            await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
 
 
 async def daily_reminder(bot: Bot) -> None:
