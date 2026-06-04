@@ -135,24 +135,30 @@ def _render_week_html(data: dict) -> str:
     return "\n".join(lines)
 
 
-def _render_grocery_html(items: list[dict]) -> str:
-    if not items:
+def _render_grocery_html(groups: list[dict]) -> str:
+    if not groups:
         return '<p class="text-xl text-gray-500">Keine Einträge.</p>'
-    rows = []
-    for item in items:
-        rows.append(
-            f'<li id="grocery-{item["id"]}" class="flex items-center gap-3 py-2">'
-            f'<button'
-            f' hx-post="/api/grocery/{item["id"]}/complete"'
-            f' hx-target="closest li"'
-            f' hx-swap="outerHTML"'
-            f' class="w-8 h-8 rounded border-2 border-gray-500 flex-shrink-0'
-            f' hover:border-green-400 hover:bg-green-400/20 active:bg-green-400/40 transition-colors">'
-            f'</button>'
-            f'<span class="text-xl">{item["content"]}</span>'
-            f'</li>'
-        )
-    return f'<ul class="space-y-1">{"".join(rows)}</ul>'
+    parts = []
+    for group in groups:
+        if group["section"]:
+            parts.append(
+                f'<p class="text-sm font-semibold text-yellow-400 uppercase tracking-wide mt-4 mb-1">'
+                f'{group["section"]}</p>'
+            )
+        for item in group["items"]:
+            parts.append(
+                f'<li id="grocery-{item["id"]}" class="flex items-center gap-3 py-1">'
+                f'<button'
+                f' hx-post="/api/grocery/{item["id"]}/complete"'
+                f' hx-target="closest li"'
+                f' hx-swap="outerHTML"'
+                f' class="w-8 h-8 rounded border-2 border-gray-500 flex-shrink-0'
+                f' hover:border-green-400 hover:bg-green-400/20 active:bg-green-400/40 transition-colors">'
+                f'</button>'
+                f'<span class="text-xl">{item["content"]}</span>'
+                f'</li>'
+            )
+    return f'<ul class="space-y-0">{"".join(parts)}</ul>'
 
 
 # ---------------------------------------------------------------------------

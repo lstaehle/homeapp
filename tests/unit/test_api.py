@@ -78,14 +78,14 @@ def test_week_endpoint_has_seven_days(client):
     assert len(r.json()["days"]) == 7
 
 
-GROCERY_ITEMS = [
-    {"id": "1", "content": "Milch"},
-    {"id": "2", "content": "Butter"},
+GROCERY_GROUPS = [
+    {"section": "Getränke", "items": [{"id": "1", "content": "Milch"}]},
+    {"section": None, "items": [{"id": "2", "content": "Butter"}]},
 ]
 
 
 def test_grocery_endpoint_returns_list(client):
-    with patch("app.main.get_restock_items", return_value=GROCERY_ITEMS):
+    with patch("app.main.get_restock_items", return_value=GROCERY_GROUPS):
         r = client.get("/api/grocery")
     assert r.status_code == 200
     assert isinstance(r.json(), list)
@@ -97,11 +97,12 @@ def test_grocery_endpoint_empty(client):
     assert r.json() == []
 
 
-def test_grocery_endpoint_item_format(client):
-    with patch("app.main.get_restock_items", return_value=GROCERY_ITEMS):
-        r = client.get("/api/grocery")
-    for item in r.json():
-        assert {"id", "content"} <= item.keys()
+def test_grocery_endpoint_shows_section_headers(client):
+    with patch("app.main.get_restock_items", return_value=GROCERY_GROUPS):
+        r = client.get("/api/grocery", headers={"HX-Request": "true"})
+    assert "Getränke" in r.text
+    assert "Milch" in r.text
+    assert "Butter" in r.text
 
 
 def test_complete_grocery_removes_item(client):

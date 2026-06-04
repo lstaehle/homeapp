@@ -16,6 +16,7 @@ def _get(path: str, **params) -> dict:
 
 
 def get_restock_items() -> list[dict]:
+    """Return tasks grouped by section: [{"section": str|None, "items": [{id, content}]}]"""
     project_name = os.environ["TODOIST_PROJECT_NAME"]
 
     projects = _get("/projects")["results"]
@@ -23,8 +24,21 @@ def get_restock_items() -> list[dict]:
     if not project:
         return []
 
-    tasks = _get("/tasks", project_id=project["id"])["results"]
-    return [{"id": t["id"], "content": t["content"]} for t in tasks]
+    project_id = project["id"]
+    sections = {s["id"]: s["name"] for s in _get("/sections", project_id=project_id)["results"]}
+    tasks = _get("/tasks", project_id=project_id)["results"]
+
+    by_section: dict[str | None, list] = {}
+    for t in tasks:
+        sid = t.get("section_id") or None
+        by_section.setdefault(sid, []).append({"id": t["id"], "content": t["content"]})
+
+    result = []
+    for sid, items in by_section.items():
+        result.append({"section": sections.get(sid) if sid else None, "items": items})
+
+    result.sort(key=lambda g: (g["section"] is None, g["section"] or ""))
+    return result
 
 
 def complete_task(task_id: str) -> None:
