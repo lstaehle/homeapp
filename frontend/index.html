@@ -6,6 +6,47 @@
   <title>Familien-Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script>
+    document.addEventListener('alpine:init', () => {
+      Alpine.store('meal', {
+        open: false,
+        date: '',
+        meals: [],
+        newMeal: '',
+        openFor(date) {
+          this.date = date;
+          const el = document.getElementById('meal-list-data');
+          this.meals = el ? JSON.parse(el.dataset.meals) : [];
+          this.newMeal = '';
+          this.open = true;
+        },
+        async select(meal) {
+          await fetch('/api/meals/plan/' + this.date, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({meal: meal})
+          });
+          this.open = false;
+          htmx.trigger(document.getElementById('panel-woche'), 'refresh');
+        },
+        async addNew() {
+          const meal = this.newMeal.trim();
+          if (!meal) return;
+          await fetch('/api/meals/list', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({meal: meal})
+          });
+          this.meals.push(meal);
+          this.newMeal = '';
+        },
+        async remove(date) {
+          await fetch('/api/meals/plan/' + date, {method: 'DELETE'});
+          htmx.trigger(document.getElementById('panel-woche'), 'refresh');
+        }
+      });
+    });
+  </script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
   <style>
     body { font-family: system-ui, sans-serif; }
@@ -13,6 +54,36 @@
   </style>
 </head>
 <body class="bg-gray-900 text-white h-screen overflow-hidden flex flex-col select-none">
+
+  <!-- Meal planning modal -->
+  <div x-data x-show="$store.meal.open" x-cloak
+       @click.self="$store.meal.open = false"
+       class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+    <div class="bg-gray-800 rounded-2xl p-6 w-80 max-h-[80vh] flex flex-col shadow-2xl">
+      <h3 class="text-2xl font-bold mb-4">🍽 Mahlzeit wählen</h3>
+      <div class="flex-1 overflow-y-auto mb-4">
+        <div class="grid grid-cols-2 gap-2">
+          <template x-for="meal in $store.meal.meals" :key="meal">
+            <button @click="$store.meal.select(meal)"
+                    class="bg-gray-700 hover:bg-blue-600 rounded-xl px-3 py-2 text-left text-base transition-colors"
+                    x-text="meal"></button>
+          </template>
+        </div>
+      </div>
+      <div class="border-t border-gray-600 pt-4">
+        <div class="flex gap-2 mb-3">
+          <input x-model="$store.meal.newMeal"
+                 @keydown.enter="$store.meal.addNew()"
+                 placeholder="Neue Mahlzeit…"
+                 class="flex-1 bg-gray-700 rounded-xl px-3 py-2 text-base outline-none focus:ring-2 focus:ring-blue-500" />
+          <button @click="$store.meal.addNew()"
+                  class="bg-green-700 hover:bg-green-600 rounded-xl px-4 py-2 text-base transition-colors">+</button>
+        </div>
+        <button @click="$store.meal.open = false"
+                class="w-full text-gray-500 hover:text-gray-300 text-sm transition-colors">Abbrechen</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Four-panel layout -->
   <div class="flex flex-1 gap-4 p-4 min-h-0">
@@ -46,7 +117,7 @@
         id="panel-woche"
         class="flex-1 overflow-y-auto"
         hx-get="/api/week"
-        hx-trigger="load, every 300s"
+        hx-trigger="load, every 300s, refresh"
         hx-swap="innerHTML"
         hx-headers='{"HX-Request": "true"}'
       >

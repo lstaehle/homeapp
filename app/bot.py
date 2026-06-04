@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 from app.gcalendar import create_event
 from app.notes import add_note
+from app.meals import get_plan, set_meal, delete_meal, get_meal_list, add_to_meal_list
 
 TZ = ZoneInfo("Europe/Zurich")
 
@@ -257,6 +258,59 @@ async def cmd_note(update: Update, context) -> None:
     await update.message.reply_text(f"📌 Notiz gespeichert: {text}")
 
 
+async def cmd_meal(update: Update, context) -> None:
+    """/meal TT.MM [Mahlzeit] — set or show meal for a date."""
+    args = context.args
+    if not args:
+        await update.message.reply_text("Verwendung:\n/meal TT.MM Mahlzeit — speichern\n/meal TT.MM — anzeigen")
+        return
+    try:
+        day = parse_date(args[0])
+    except ValueError:
+        await update.message.reply_text("❌ Ungültiges Datum. Format: TT.MM oder TT.MM.JJJJ")
+        return
+    if len(args) == 1:
+        meal = get_plan().get(day.isoformat())
+        if meal:
+            await update.message.reply_text(f"🍽 {day.strftime('%d.%m.')}: {meal}")
+        else:
+            await update.message.reply_text(f"Kein Menü für {day.strftime('%d.%m.')} geplant.")
+        return
+    meal = " ".join(args[1:]).strip()
+    set_meal(day, meal)
+    add_to_meal_list(meal)
+    await update.message.reply_text(f"✅ Menü für {day.strftime('%d.%m.')} gespeichert: {meal}")
+
+
+async def cmd_delmeal(update: Update, context) -> None:
+    """/delmeal TT.MM — remove meal for a date."""
+    args = context.args
+    if not args:
+        await update.message.reply_text("Verwendung: /delmeal TT.MM")
+        return
+    try:
+        day = parse_date(args[0])
+    except ValueError:
+        await update.message.reply_text("❌ Ungültiges Datum. Format: TT.MM oder TT.MM.JJJJ")
+        return
+    delete_meal(day)
+    await update.message.reply_text(f"🗑 Menü für {day.strftime('%d.%m.')} gelöscht.")
+
+
+async def cmd_meals(update: Update, context) -> None:
+    """/meals — show meal plan for the next 7 days."""
+    plan = get_plan()
+    today = datetime.now(TZ).date()
+    lines = ["📅 Menüplan:"]
+    german_days = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+    for i in range(7):
+        day = today + timedelta(days=i)
+        label = "Heute" if i == 0 else german_days[day.weekday()]
+        meal = plan.get(day.isoformat(), "–")
+        lines.append(f"• {label} {day.strftime('%d.%m.')}: {meal}")
+    await update.message.reply_text("\n".join(lines))
+
+
 async def cmd_ping(update: Update, context) -> None:
     logger.info("PING received from %s", update.effective_user.id)
     await update.message.reply_text("pong")
@@ -268,6 +322,9 @@ def build_application() -> Application:
     app = ApplicationBuilder().token(token).updater(None).build()
     app.add_handler(CommandHandler("ping", cmd_ping))
     app.add_handler(CommandHandler("note", cmd_note))
+    app.add_handler(CommandHandler("meal", cmd_meal))
+    app.add_handler(CommandHandler("delmeal", cmd_delmeal))
+    app.add_handler(CommandHandler("meals", cmd_meals))
     app.add_handler(_build_conversation_handler())
     app.add_error_handler(_error_handler)
     return app

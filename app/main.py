@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -16,6 +17,7 @@ from telegram import Update
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from app.bot import build_application
 from app.gcalendar import get_events_today, get_events_this_week, get_events_range
@@ -24,6 +26,11 @@ from app.scheduler import get_scheduler
 from app.notes import add_note, delete_note, get_notes
 from app.todoist import complete_task, get_restock_items
 from app.weather import get_weather, get_forecast
+from app.meals import get_plan, set_meal, delete_meal, get_meal_list, add_to_meal_list
+
+
+class MealBody(BaseModel):
+    meal: str
 
 TZ = ZoneInfo("Europe/Zurich")
 GERMAN_DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
@@ -122,13 +129,16 @@ def _render_today_html(data: dict) -> str:
 def _render_week_html(data: dict) -> str:
     if not data["days"]:
         return '<p class="text-xl text-gray-500">Keine Vorschau verfügbar.</p>'
-    lines = []
+    meal_list_json = json.dumps(data.get("meal_list", []), ensure_ascii=False)
+    lines = [f'<div id="meal-list-data" data-meals=\'{meal_list_json}\' class="hidden"></div>']
     for day in data["days"]:
         w = day.get("weather")
         weather_str = (
             f' &nbsp;·&nbsp; {w["emoji"]} {w["temp_min"]}–{w["temp_max"]}°C'
             if w else ""
         )
+        date_iso = day["date_iso"]
+        meal = day.get("meal")
         lines.append('<div class="mb-3">')
         lines.append(
             f'<p class="font-semibold text-gray-300 text-lg border-b border-gray-600 pb-1 mb-1">'
@@ -136,6 +146,19 @@ def _render_week_html(data: dict) -> str:
         )
         for e in day["events"]:
             lines.append(f'<p class="text-lg ml-2">• {e["time"]} – {e["title"]}</p>')
+        if meal:
+            lines.append(
+                f'<div class="flex items-center gap-2 mt-1">'
+                f'<span class="text-base text-orange-200">🍽 {meal}</span>'
+                f'<button onclick="Alpine.store(\'meal\').remove(\'{date_iso}\')"'
+                f' class="text-gray-600 hover:text-red-400 text-lg leading-none ml-1">×</button>'
+                f'</div>'
+            )
+        else:
+            lines.append(
+                f'<button onclick="Alpine.store(\'meal\').openFor(\'{date_iso}\')"'
+                f' class="mt-1 text-gray-500 hover:text-green-400 text-sm transition-colors">+ Mahlzeit</button>'
+            )
         lines.append("</div>")
     return "\n".join(lines)
 
@@ -264,6 +287,14 @@ def api_week(request: Request):
         logger.error("get_events_range failed: %s", exc)
         events = []
 
+    try:
+        meal_plan = get_plan()
+        meal_list = get_meal_list()
+    except Exception as exc:
+        logger.error("get meals failed: %s", exc)
+        meal_plan = {}
+        meal_list = []
+
     days = []
     for i in range(5):
         day = tomorrow + timedelta(days=i)
@@ -275,12 +306,14 @@ def api_week(request: Request):
         ]
         days.append({
             "date": day.strftime("%d.%m."),
+            "date_iso": day_str,
             "weekday": GERMAN_DAYS[day.weekday()],
             "weather": forecast.get(day_str),
             "events": day_events,
+            "meal": meal_plan.get(day_str),
         })
 
-    data = {"days": days}
+    data = {"days": days, "meal_list": meal_list}
     if request.headers.get("HX-Request"):
         return HTMLResponse(_render_week_html(data))
     return data
@@ -319,6 +352,24 @@ def complete_grocery(task_id: str):
     except Exception as exc:
         logger.error("complete_task failed: %s", exc)
     return HTMLResponse("")
+
+
+@app.post("/api/meals/plan/{day}")
+def api_set_meal(day: str, body: MealBody):
+    set_meal(date.fromisoformat(day), body.meal)
+    return {"ok": True}
+
+
+@app.delete("/api/meals/plan/{day}")
+def api_delete_meal(day: str):
+    delete_meal(date.fromisoformat(day))
+    return {"ok": True}
+
+
+@app.post("/api/meals/list")
+def api_add_meal_to_list(body: MealBody):
+    add_to_meal_list(body.meal)
+    return {"ok": True}
 
 
 # Static files must be mounted last so API routes take precedence
