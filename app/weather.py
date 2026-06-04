@@ -2,46 +2,59 @@ import os
 
 import httpx
 
-_BASE = "https://api.openweathermap.org/data/2.5/weather"
+_BASE = "https://api.open-meteo.com/v1/forecast"
 
-_EMOJI = {
-    range(200, 300): "⛈️",
-    range(300, 400): "🌦️",
-    range(500, 600): "🌧️",
-    range(600, 700): "❄️",
-    range(700, 800): "🌫️",
-    range(800, 801): "☀️",
-    range(801, 802): "🌤️",
-    range(802, 803): "⛅",
-    range(803, 900): "☁️",
+_WMO = {
+    0:  ("☀️",  "Klar"),
+    1:  ("🌤️", "Überwiegend klar"),
+    2:  ("⛅",  "Teilweise bewölkt"),
+    3:  ("☁️",  "Bewölkt"),
+    45: ("🌫️", "Nebel"),
+    48: ("🌫️", "Nebel"),
+    51: ("🌦️", "Leichter Nieselregen"),
+    53: ("🌦️", "Nieselregen"),
+    55: ("🌦️", "Starker Nieselregen"),
+    61: ("🌧️", "Leichter Regen"),
+    63: ("🌧️", "Regen"),
+    65: ("🌧️", "Starker Regen"),
+    71: ("❄️",  "Leichter Schneefall"),
+    73: ("❄️",  "Schneefall"),
+    75: ("❄️",  "Starker Schneefall"),
+    77: ("❄️",  "Schneekörner"),
+    80: ("🌧️", "Leichte Regenschauer"),
+    81: ("🌧️", "Regenschauer"),
+    82: ("🌧️", "Starke Regenschauer"),
+    85: ("❄️",  "Leichte Schneeschauer"),
+    86: ("❄️",  "Schneeschauer"),
+    95: ("⛈️", "Gewitter"),
+    96: ("⛈️", "Gewitter mit Hagel"),
+    99: ("⛈️", "Gewitter mit Hagel"),
 }
 
 
-def _weather_emoji(condition_id: int) -> str:
-    for r, emoji in _EMOJI.items():
-        if condition_id in r:
-            return emoji
-    return "🌡️"
-
-
 def get_weather() -> dict | None:
-    api_key = os.environ.get("OPENWEATHERMAP_API_KEY", "").strip()
-    city = os.environ.get("WEATHER_CITY", "").strip()
-    if not api_key or not city:
+    lat = os.environ.get("WEATHER_LAT", "").strip()
+    lon = os.environ.get("WEATHER_LON", "").strip()
+    if not lat or not lon:
         return None
 
     r = httpx.get(
         _BASE,
-        params={"q": city, "appid": api_key, "units": "metric", "lang": "de"},
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "current": "temperature_2m,apparent_temperature,weather_code",
+            "timezone": "Europe/Zurich",
+        },
         timeout=5,
     )
     r.raise_for_status()
-    data = r.json()
+    current = r.json()["current"]
 
-    condition = data["weather"][0]
+    emoji, description = _WMO.get(current["weather_code"], ("🌡️", "Unbekannt"))
     return {
-        "temp": round(data["main"]["temp"]),
-        "feels_like": round(data["main"]["feels_like"]),
-        "description": condition["description"].capitalize(),
-        "emoji": _weather_emoji(condition["id"]),
+        "temp": round(current["temperature_2m"]),
+        "feels_like": round(current["apparent_temperature"]),
+        "description": description,
+        "emoji": emoji,
     }
