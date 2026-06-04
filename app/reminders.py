@@ -1,3 +1,4 @@
+import logging
 import os
 from collections import defaultdict
 from datetime import date, datetime
@@ -9,8 +10,9 @@ from app.gcalendar import get_events_today, get_events_this_week
 from app.scheduler import get_scheduler
 
 TZ = ZoneInfo("Europe/Zurich")
-
 GERMAN_DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_start(event: dict) -> tuple[date, str]:
@@ -66,16 +68,37 @@ async def _send_to_both(bot: Bot, message: str) -> None:
             await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
 
 
+async def _notify_error(bot: Bot, job_name: str, exc: Exception) -> None:
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID_1", "").strip()
+    if not chat_id:
+        return
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"⚠️ Homeapp Fehler in {job_name}: {exc}",
+        )
+    except Exception as notify_exc:
+        logger.error("Failed to send error notification: %s", notify_exc)
+
+
 async def daily_reminder(bot: Bot) -> None:
-    events = get_events_today()
-    msg = format_daily_message(events, datetime.now(TZ).date())
-    await _send_to_both(bot, msg)
+    try:
+        events = get_events_today()
+        msg = format_daily_message(events, datetime.now(TZ).date())
+        await _send_to_both(bot, msg)
+    except Exception as exc:
+        logger.error("daily_reminder failed: %s", exc)
+        await _notify_error(bot, "daily_reminder", exc)
 
 
 async def weekly_reminder(bot: Bot) -> None:
-    events = get_events_this_week()
-    msg = format_weekly_message(events)
-    await _send_to_both(bot, msg)
+    try:
+        events = get_events_this_week()
+        msg = format_weekly_message(events)
+        await _send_to_both(bot, msg)
+    except Exception as exc:
+        logger.error("weekly_reminder failed: %s", exc)
+        await _notify_error(bot, "weekly_reminder", exc)
 
 
 def register_jobs(bot: Bot) -> None:

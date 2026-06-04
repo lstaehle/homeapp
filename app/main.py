@@ -49,19 +49,24 @@ async def _poll_telegram(bot_app) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     bot_app = build_application()
-    await bot_app.initialize()
+    poll_task = None
 
-    poll_task = asyncio.create_task(_poll_telegram(bot_app))
+    try:
+        await bot_app.initialize()
+        poll_task = asyncio.create_task(_poll_telegram(bot_app))
+        register_jobs(bot_app.bot)
+        app.state.bot = bot_app.bot
+    except Exception as exc:
+        logger.warning("Bot init failed (%s) — running without Telegram", exc)
+        app.state.bot = None
 
-    register_jobs(bot_app.bot)
     get_scheduler().start()
-
-    app.state.bot = bot_app.bot
 
     yield
 
-    poll_task.cancel()
-    await asyncio.gather(poll_task, return_exceptions=True)
+    if poll_task:
+        poll_task.cancel()
+        await asyncio.gather(poll_task, return_exceptions=True)
     get_scheduler().shutdown()
     await bot_app.shutdown()
 
@@ -160,7 +165,11 @@ async def test_reminder(request: Request):
 
 @app.get("/api/today")
 async def api_today(request: Request):
-    events = get_events_today()
+    try:
+        events = get_events_today()
+    except Exception as exc:
+        logger.error("get_events_today failed: %s", exc)
+        events = []
     data = {
         "date": datetime.now(TZ).strftime("%d.%m.%Y"),
         "events": [
@@ -175,7 +184,11 @@ async def api_today(request: Request):
 
 @app.get("/api/week")
 async def api_week(request: Request):
-    events = get_events_this_week()
+    try:
+        events = get_events_this_week()
+    except Exception as exc:
+        logger.error("get_events_this_week failed: %s", exc)
+        events = []
     days = []
     for day in _week_days():
         day_events = [
@@ -196,7 +209,11 @@ async def api_week(request: Request):
 
 @app.get("/api/grocery")
 async def api_grocery(request: Request):
-    items = get_restock_items()
+    try:
+        items = get_restock_items()
+    except Exception as exc:
+        logger.error("get_restock_items failed: %s", exc)
+        items = []
     if request.headers.get("HX-Request"):
         return HTMLResponse(_render_grocery_html(items))
     return items
