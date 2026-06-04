@@ -7,4 +7,4 @@ services:
     volumes:
       - ./.env:/app/.env:ro
       - ./credentials.json:/app/credentials.json:ro
-      - ./token.json:/app/token.json:ro
+      - ./token.json:/app/token.json
