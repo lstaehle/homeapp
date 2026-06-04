@@ -46,7 +46,7 @@ def get_weather() -> dict | None:
             "current": "temperature_2m,apparent_temperature,weather_code",
             "timezone": "Europe/Zurich",
         },
-        timeout=5,
+        timeout=15,
     )
     r.raise_for_status()
     current = r.json()["current"]
