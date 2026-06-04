@@ -271,7 +271,7 @@ def api_today(request: Request):
 def api_week(request: Request):
     today = datetime.now(TZ).date()
     tomorrow = today + timedelta(days=1)
-    end = today + timedelta(days=5)
+    end = today + timedelta(days=4)
 
     try:
         forecast = {f["date"]: f for f in get_forecast(days=5)}
@@ -297,7 +297,7 @@ def api_week(request: Request):
 
     days = []
     for i in range(5):
-        day = tomorrow + timedelta(days=i)
+        day = today + timedelta(days=i)
         day_str = day.isoformat()
         day_events = [
             {"title": e["title"], "time": _event_time_str(e), "location": e["location"]}
