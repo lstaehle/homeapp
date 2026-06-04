@@ -24,7 +24,7 @@
         id="panel-heute"
         class="flex-1 overflow-y-auto"
         hx-get="/api/today"
-        hx-trigger="load, every 300s"
+        hx-trigger="load, every 10s"
         hx-swap="innerHTML"
         hx-headers='{"HX-Request": "true"}'
       >
@@ -39,7 +39,7 @@
         id="panel-woche"
         class="flex-1 overflow-y-auto"
         hx-get="/api/week"
-        hx-trigger="load, every 300s"
+        hx-trigger="load, every 10s"
         hx-swap="innerHTML"
         hx-headers='{"HX-Request": "true"}'
       >
@@ -54,7 +54,7 @@
         id="panel-einkauf"
         class="flex-1 overflow-y-auto"
         hx-get="/api/grocery"
-        hx-trigger="load, every 300s"
+        hx-trigger="load, every 10s"
         hx-swap="innerHTML"
         hx-headers='{"HX-Request": "true"}'
       >
