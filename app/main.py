@@ -1,11 +1,17 @@
+import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+logger = logging.getLogger(__name__)
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+from telegram import Update
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -21,12 +27,31 @@ TZ = ZoneInfo("Europe/Zurich")
 GERMAN_DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
 
+async def _poll_telegram(bot_app) -> None:
+    """Manual polling loop running in uvicorn's event loop — avoids PTB/uvicorn asyncio conflicts."""
+    await bot_app.bot.delete_webhook()
+    offset: int | None = None
+    while True:
+        try:
+            updates = await bot_app.bot.get_updates(
+                offset=offset, timeout=10, allowed_updates=Update.ALL_TYPES
+            )
+            for update in updates:
+                offset = update.update_id + 1
+                asyncio.create_task(bot_app.process_update(update))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("Telegram polling error: %s", exc)
+            await asyncio.sleep(1)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     bot_app = build_application()
     await bot_app.initialize()
-    await bot_app.start()
-    await bot_app.updater.start_polling()
+
+    poll_task = asyncio.create_task(_poll_telegram(bot_app))
 
     register_jobs(bot_app.bot)
     get_scheduler().start()
@@ -35,9 +60,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    poll_task.cancel()
+    await asyncio.gather(poll_task, return_exceptions=True)
     get_scheduler().shutdown()
-    await bot_app.updater.stop()
-    await bot_app.stop()
     await bot_app.shutdown()
 
 

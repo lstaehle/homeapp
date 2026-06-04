@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 from datetime import date, datetime, time, timedelta
@@ -13,6 +14,9 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from app.gcalendar import create_event
 
@@ -218,8 +222,20 @@ def _build_conversation_handler() -> ConversationHandler:
     )
 
 
+async def _error_handler(update: object, context) -> None:
+    logger.error("PTB error", exc_info=context.error)
+
+
+async def cmd_ping(update: Update, context) -> None:
+    logger.info("PING received from %s", update.effective_user.id)
+    await update.message.reply_text("pong")
+
+
 def build_application() -> Application:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
-    app = ApplicationBuilder().token(token).build()
+    # updater(None): we manage polling ourselves to avoid asyncio conflicts with uvicorn
+    app = ApplicationBuilder().token(token).updater(None).build()
+    app.add_handler(CommandHandler("ping", cmd_ping))
     app.add_handler(_build_conversation_handler())
+    app.add_error_handler(_error_handler)
     return app
