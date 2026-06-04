@@ -1,4 +1,5 @@
 from datetime import date, time, timedelta
+from unittest.mock import patch
 
 import pytest
 
@@ -7,6 +8,13 @@ from app.bot import DurationResult, parse_date, parse_duration, parse_time
 
 def test_parse_date_valid():
     assert parse_date("25.12.2026") == date(2026, 12, 25)
+
+
+def test_parse_date_short_uses_current_year():
+    with patch("app.bot.datetime") as mock_dt:
+        mock_dt.now.return_value.year = 2026
+        result = parse_date("25.12")
+    assert result == date(2026, 12, 25)
 
 
 def test_parse_date_invalid_format():

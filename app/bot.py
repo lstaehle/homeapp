@@ -37,10 +37,14 @@ class DurationResult(NamedTuple):
 
 def parse_date(text: str) -> date:
     parts = text.strip().split(".")
-    if len(parts) != 3:
-        raise ValueError(f"Ungültiges Datumsformat: {text!r}")
     try:
-        day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
+        if len(parts) == 2:
+            day, month = int(parts[0]), int(parts[1])
+            year = datetime.now(TZ).year
+        elif len(parts) == 3:
+            day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
+        else:
+            raise ValueError
         return date(year, month, day)
     except (ValueError, TypeError) as exc:
         raise ValueError(f"Ungültiges Datum: {text!r}") from exc
@@ -81,7 +85,7 @@ async def cmd_neuesevent(update: Update, context) -> int:
 
 async def receive_title(update: Update, context) -> int:
     context.user_data["title"] = update.message.text.strip()
-    await update.message.reply_text("An welchem Datum? (Format: TT.MM.JJJJ)")
+    await update.message.reply_text("An welchem Datum? (Format: TT.MM oder TT.MM.JJJJ)")
     return DATE
 
 
@@ -90,7 +94,7 @@ async def receive_date(update: Update, context) -> int:
         context.user_data["date"] = parse_date(update.message.text)
     except ValueError:
         await update.message.reply_text(
-            "❌ Ungültiges Datum. Bitte im Format TT.MM.JJJJ eingeben (z.B. 25.12.2026):"
+            "❌ Ungültiges Datum. Bitte im Format TT.MM oder TT.MM.JJJJ eingeben (z.B. 25.12):"
         )
         return DATE
     await update.message.reply_text("Um wie viel Uhr? (Format: HH:MM)")
