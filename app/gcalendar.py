@@ -14,6 +14,10 @@ SCOPES = [
 TZ = ZoneInfo("Europe/Zurich")
 
 
+def _calendar_id() -> str:
+    return os.environ.get("GOOGLE_CALENDAR_ID", "primary")
+
+
 def _get_service():
     creds = None
     token_file = os.environ["GOOGLE_TOKEN_FILE"]
@@ -55,7 +59,7 @@ def get_events_today() -> list[dict]:
     result = (
         service.events()
         .list(
-            calendarId="primary",
+            calendarId=_calendar_id(),
             timeMin=day_start.isoformat(),
             timeMax=day_end.isoformat(),
             singleEvents=True,
@@ -76,7 +80,7 @@ def get_events_this_week() -> list[dict]:
     result = (
         service.events()
         .list(
-            calendarId="primary",
+            calendarId=_calendar_id(),
             timeMin=week_start.isoformat(),
             timeMax=week_end.isoformat(),
             singleEvents=True,
@@ -109,7 +113,7 @@ def create_event(
             "start": {"dateTime": start_dt.isoformat(), "timeZone": "Europe/Zurich"},
             "end": {"dateTime": end_dt.isoformat(), "timeZone": "Europe/Zurich"},
         }
-    return service.events().insert(calendarId="primary", body=body).execute()
+    return service.events().insert(calendarId=_calendar_id(), body=body).execute()
 
 
 def smoke_test():
