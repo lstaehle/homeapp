@@ -18,12 +18,12 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.bot import build_application
-from app.gcalendar import get_events_today, get_events_this_week
+from app.gcalendar import get_events_today, get_events_this_week, get_events_range
 from app.reminders import daily_reminder, register_jobs
 from app.scheduler import get_scheduler
 from app.notes import add_note, delete_note, get_notes
 from app.todoist import complete_task, get_restock_items
-from app.weather import get_weather
+from app.weather import get_weather, get_forecast
 
 TZ = ZoneInfo("Europe/Zurich")
 GERMAN_DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
@@ -120,20 +120,23 @@ def _render_today_html(data: dict) -> str:
 
 
 def _render_week_html(data: dict) -> str:
+    if not data["days"]:
+        return '<p class="text-xl text-gray-500">Keine Vorschau verfügbar.</p>'
     lines = []
     for day in data["days"]:
-        if not day["events"]:
-            continue
-        lines.append('<div class="mb-4">')
+        w = day.get("weather")
+        weather_str = (
+            f' &nbsp;·&nbsp; {w["emoji"]} {w["temp_min"]}–{w["temp_max"]}°C'
+            if w else ""
+        )
+        lines.append('<div class="mb-3">')
         lines.append(
-            f'<p class="font-semibold text-gray-300 text-xl border-b border-gray-600 pb-1 mb-2">'
-            f'{day["weekday"]}, {day["date"]}</p>'
+            f'<p class="font-semibold text-gray-300 text-lg border-b border-gray-600 pb-1 mb-1">'
+            f'{day["weekday"]}, {day["date"]}{weather_str}</p>'
         )
         for e in day["events"]:
-            lines.append(f'<p class="text-xl ml-2">• {e["time"]} – {e["title"]}</p>')
+            lines.append(f'<p class="text-lg ml-2">• {e["time"]} – {e["title"]}</p>')
         lines.append("</div>")
-    if not lines:
-        lines.append('<p class="text-xl text-gray-500">Diese Woche keine Termine.</p>')
     return "\n".join(lines)
 
 
@@ -243,26 +246,40 @@ def api_today(request: Request):
 
 @app.get("/api/week")
 def api_week(request: Request):
-    try:
-        events = get_events_this_week()
-    except Exception as exc:
-        logger.error("get_events_this_week failed: %s", exc)
-        events = []
     today = datetime.now(TZ).date()
+    tomorrow = today + timedelta(days=1)
+    end = today + timedelta(days=5)
+
+    try:
+        forecast = {f["date"]: f for f in get_forecast(days=5)}
+    except Exception as exc:
+        logger.error("get_forecast failed: %s", exc)
+        forecast = {}
+
+    try:
+        start_dt = datetime.combine(tomorrow, datetime.min.time()).replace(tzinfo=TZ)
+        end_dt = datetime.combine(end, datetime.max.time().replace(microsecond=0)).replace(tzinfo=TZ)
+        events = get_events_range(start_dt, end_dt)
+    except Exception as exc:
+        logger.error("get_events_range failed: %s", exc)
+        events = []
+
     days = []
-    for day in _week_days():
-        if day <= today:
-            continue
+    for i in range(5):
+        day = tomorrow + timedelta(days=i)
+        day_str = day.isoformat()
         day_events = [
             {"title": e["title"], "time": _event_time_str(e), "location": e["location"]}
             for e in events
             if _event_date_val(e) == day
         ]
         days.append({
-            "date": day.strftime("%d.%m.%Y"),
+            "date": day.strftime("%d.%m."),
             "weekday": GERMAN_DAYS[day.weekday()],
+            "weather": forecast.get(day_str),
             "events": day_events,
         })
+
     data = {"days": days}
     if request.headers.get("HX-Request"):
         return HTMLResponse(_render_week_html(data))

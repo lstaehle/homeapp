@@ -91,6 +91,22 @@ def get_events_this_week() -> list[dict]:
     return [_parse_event(e) for e in result.get("items", [])]
 
 
+def get_events_range(start_dt: datetime, end_dt: datetime) -> list[dict]:
+    service = _get_service()
+    result = (
+        service.events()
+        .list(
+            calendarId=_calendar_id(),
+            timeMin=start_dt.isoformat(),
+            timeMax=end_dt.isoformat(),
+            singleEvents=True,
+            orderBy="startTime",
+        )
+        .execute()
+    )
+    return [_parse_event(e) for e in result.get("items", [])]
+
+
 def create_event(
     title: str,
     start_dt: datetime,

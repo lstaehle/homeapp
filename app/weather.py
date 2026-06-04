@@ -32,6 +32,41 @@ _WMO = {
 }
 
 
+def get_forecast(days: int = 5) -> list[dict]:
+    lat = os.environ.get("WEATHER_LAT", "").strip()
+    lon = os.environ.get("WEATHER_LON", "").strip()
+    if not lat or not lon:
+        return []
+
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "daily": "temperature_2m_max,temperature_2m_min,weather_code",
+        "timezone": "Europe/Zurich",
+        "forecast_days": days + 1,  # index 0 = today; we return 1..days
+    }
+    elev = os.environ.get("WEATHER_ELEVATION", "").strip()
+    if elev:
+        params["elevation"] = elev
+
+    r = httpx.get(_BASE, params=params, timeout=15)
+    r.raise_for_status()
+    daily = r.json()["daily"]
+
+    result = []
+    for i in range(1, days + 1):
+        code = daily["weather_code"][i]
+        emoji, description = _WMO.get(code, ("🌡️", "Unbekannt"))
+        result.append({
+            "date": daily["time"][i],           # "YYYY-MM-DD"
+            "emoji": emoji,
+            "description": description,
+            "temp_min": round(daily["temperature_2m_min"][i]),
+            "temp_max": round(daily["temperature_2m_max"][i]),
+        })
+    return result
+
+
 def get_weather() -> dict | None:
     lat = os.environ.get("WEATHER_LAT", "").strip()
     lon = os.environ.get("WEATHER_LON", "").strip()
