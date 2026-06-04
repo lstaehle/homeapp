@@ -20,13 +20,6 @@ WEEK_EVENT = {
 }
 
 
-@pytest.fixture(autouse=True)
-def clear_grocery_state():
-    import app.main
-    app.main._checked_items.clear()
-    app.main._item_cache.clear()
-
-
 @pytest.fixture
 def client():
     mock_bot_app = AsyncMock()
@@ -111,18 +104,9 @@ def test_grocery_endpoint_item_format(client):
         assert {"id", "content"} <= item.keys()
 
 
-def test_toggle_grocery_checks_item(client):
-    with patch("app.main.get_restock_items", return_value=GROCERY_ITEMS):
-        client.get("/api/grocery", headers={"HX-Request": "true"})
-    r = client.post("/api/grocery/1/toggle")
+def test_complete_grocery_removes_item(client):
+    with patch("app.main.complete_task") as mock_complete:
+        r = client.post("/api/grocery/42/complete")
     assert r.status_code == 200
-    assert "line-through" in r.text
-    assert "✓" in r.text
-
-
-def test_toggle_grocery_unchecks_item(client):
-    with patch("app.main.get_restock_items", return_value=GROCERY_ITEMS):
-        client.get("/api/grocery", headers={"HX-Request": "true"})
-    client.post("/api/grocery/1/toggle")
-    r = client.post("/api/grocery/1/toggle")
-    assert "line-through" not in r.text
+    assert r.text == ""
+    mock_complete.assert_called_once_with("42")

@@ -59,3 +59,13 @@ def test_get_restock_items_empty():
     assert get_restock_items() == []
 
 
+@respx.mock
+def test_complete_task_calls_close_endpoint():
+    route = respx.post("https://api.todoist.com/api/v1/tasks/42/close").mock(
+        return_value=httpx.Response(204)
+    )
+
+    from app.todoist import complete_task
+    complete_task("42")
+
+    assert route.called
