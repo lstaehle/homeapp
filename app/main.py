@@ -186,7 +186,7 @@ def _render_grocery_html(groups: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 
 @app.get("/api/weather")
-async def api_weather(request: Request):
+def api_weather(request: Request):
     try:
         w = get_weather()
     except Exception as exc:
@@ -195,7 +195,7 @@ async def api_weather(request: Request):
     if not request.headers.get("HX-Request"):
         return w or {}
     if not w:
-        return HTMLResponse("")
+        return HTMLResponse('<p class="text-xl text-gray-500">Wetter nicht verfügbar.</p>')
     return HTMLResponse(
         f'<p class="text-xl text-gray-300 mb-3">'
         f'{w["emoji"]} {w["temp"]}°C &nbsp;·&nbsp; {w["description"]} &nbsp;·&nbsp; '
@@ -222,7 +222,7 @@ async def test_reminder(request: Request):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/today")
-async def api_today(request: Request):
+def api_today(request: Request):
     try:
         events = get_events_today()
     except Exception as exc:
@@ -241,7 +241,7 @@ async def api_today(request: Request):
 
 
 @app.get("/api/week")
-async def api_week(request: Request):
+def api_week(request: Request):
     try:
         events = get_events_this_week()
     except Exception as exc:
@@ -269,7 +269,7 @@ async def api_week(request: Request):
 
 
 @app.get("/api/grocery")
-async def api_grocery(request: Request):
+def api_grocery(request: Request):
     try:
         items = get_restock_items()
     except Exception as exc:
@@ -281,7 +281,7 @@ async def api_grocery(request: Request):
 
 
 @app.get("/api/notes")
-async def api_notes(request: Request):
+def api_notes(request: Request):
     notes = get_notes()
     if request.headers.get("HX-Request"):
         return HTMLResponse(_render_notes_html(notes))
@@ -289,13 +289,13 @@ async def api_notes(request: Request):
 
 
 @app.delete("/api/notes/{note_id}")
-async def api_delete_note(note_id: str):
+def api_delete_note(note_id: str):
     delete_note(note_id)
     return HTMLResponse("")
 
 
 @app.post("/api/grocery/{task_id}/complete")
-async def complete_grocery(task_id: str):
+def complete_grocery(task_id: str):
     try:
         complete_task(task_id)
     except Exception as exc:
