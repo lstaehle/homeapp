@@ -1,6 +1,9 @@
+import logging
 import os
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 _BASE = "https://api.todoist.com/api/v1"
 
@@ -33,6 +36,7 @@ def _get_completed_tasks(project_id: str) -> list[dict]:
         )
         r.raise_for_status()
         raw = r.json().get("items") or []
+        logger.info("completed tasks fetched: %d items", len(raw))
         return [
             {
                 "id": str(t.get("task_id") or t.get("id") or ""),
@@ -42,7 +46,8 @@ def _get_completed_tasks(project_id: str) -> list[dict]:
             for t in raw
             if t.get("content")
         ]
-    except Exception:
+    except Exception as exc:
+        logger.warning("_get_completed_tasks failed: %s", exc)
         return []
 
 
@@ -70,20 +75,27 @@ def get_restock_items() -> list[dict]:
     seen: set = set()
     for sid, items in by_section.items():
         seen.add(sid)
+        section_name = sections.get(sid) if sid else None
         result.append({
-            "section": sections.get(sid) if sid else None,
+            "section": section_name,
             "items": items,
             "completed": completed_by_section.get(sid, []),
         })
     for sid, items in completed_by_section.items():
         if sid not in seen:
+            section_name = sections.get(sid) if sid else None
             result.append({
-                "section": sections.get(sid) if sid else None,
+                "section": section_name,
                 "items": [],
                 "completed": items,
             })
 
     result.sort(key=lambda g: (g["section"] is None, g["section"] or ""))
+    logger.info(
+        "get_restock_items: %d groups — %s",
+        len(result),
+        [(g["section"], len(g["items"]), len(g["completed"])) for g in result],
+    )
     return result
 
 

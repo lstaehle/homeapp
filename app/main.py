@@ -251,19 +251,19 @@ def _render_grocery_html(groups: list[dict], pending: list[dict] | None = None) 
     if not groups and not pending:
         return '<p class="text-xl text-gray-500">Keine Einträge.</p>'
 
-    todoist_parts = []
     for group in groups:
         active = group.get("items", [])
         completed = group.get("completed", [])
         if not active and not completed:
             continue
-        if group["section"]:
-            todoist_parts.append(
-                f'<p class="text-sm font-semibold text-yellow-400 uppercase tracking-wide mt-4 mb-1">'
-                f'{group["section"]}</p>'
-            )
+        section_label = group["section"] or "Ohne Bereich"
+        parts.append(
+            f'<p class="text-sm font-semibold text-yellow-400 uppercase tracking-wide mt-4 mb-1">'
+            f'{section_label}</p>'
+            f'<ul class="space-y-0">'
+        )
         for item in active:
-            todoist_parts.append(
+            parts.append(
                 f'<li id="grocery-{item["id"]}" class="flex items-center gap-3 py-1">'
                 f'<button'
                 f' hx-post="/api/grocery/{item["id"]}/complete"'
@@ -276,15 +276,14 @@ def _render_grocery_html(groups: list[dict], pending: list[dict] | None = None) 
                 f'</li>'
             )
         for item in completed:
-            todoist_parts.append(
+            parts.append(
                 f'<li class="flex items-center gap-3 py-1 opacity-40">'
                 f'<span class="w-8 h-8 rounded border-2 border-gray-600 flex-shrink-0'
                 f' flex items-center justify-center text-green-500 text-sm">✓</span>'
                 f'<span class="text-xl line-through text-gray-500">{item["content"]}</span>'
                 f'</li>'
             )
-    if todoist_parts:
-        parts.append(f'<ul class="space-y-0">{"".join(todoist_parts)}</ul>')
+        parts.append('</ul>')
 
     return "".join(parts)
 
