@@ -13,12 +13,13 @@
         date: '',
         meals: [],
         newMeal: '',
-        openFor(date) {
+        async openFor(date) {
           this.date = date;
-          const el = document.getElementById('meal-list-data');
-          this.meals = el ? JSON.parse(el.dataset.meals) : [];
           this.newMeal = '';
           this.open = true;
+          const r = await fetch('/api/meals');
+          const data = await r.json();
+          this.meals = data.list;
         },
         async select(meal) {
           await fetch('/api/meals/plan/' + this.date, {
@@ -27,6 +28,7 @@
             body: JSON.stringify({meal: meal})
           });
           this.open = false;
+          htmx.trigger(document.getElementById('panel-heute'), 'refresh');
           htmx.trigger(document.getElementById('panel-woche'), 'refresh');
         },
         async addNew() {
@@ -42,6 +44,7 @@
         },
         async remove(date) {
           await fetch('/api/meals/plan/' + date, {method: 'DELETE'});
+          htmx.trigger(document.getElementById('panel-heute'), 'refresh');
           htmx.trigger(document.getElementById('panel-woche'), 'refresh');
         }
       });
@@ -102,7 +105,7 @@
         id="panel-heute"
         class="flex-1 overflow-y-auto"
         hx-get="/api/today"
-        hx-trigger="load, every 300s"
+        hx-trigger="load, every 300s, refresh"
         hx-swap="innerHTML"
         hx-headers='{"HX-Request": "true"}'
       >

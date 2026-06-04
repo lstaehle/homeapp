@@ -112,6 +112,8 @@ def _week_days() -> list[date]:
 # ---------------------------------------------------------------------------
 
 def _render_today_html(data: dict) -> str:
+    date_iso = data["date_iso"]
+    meal = data.get("meal")
     lines = [f'<p class="text-gray-400 text-xl mb-4">{data["date"]}</p>']
     if not data["events"]:
         lines.append('<p class="text-2xl text-gray-500">Heute keine Termine.</p>')
@@ -123,14 +125,28 @@ def _render_today_html(data: dict) -> str:
                 lines.append(f'<p class="text-lg text-gray-400 ml-6">📍 {e["location"]}</p>')
             lines.append("</div>")
         lines.append("</div>")
+    lines.append('<div class="mt-4 pt-3 border-t border-gray-700">')
+    if meal:
+        lines.append(
+            f'<div class="flex items-center gap-2">'
+            f'<span class="text-xl text-orange-200">🍽 {meal}</span>'
+            f'<button onclick="Alpine.store(\'meal\').remove(\'{date_iso}\')"'
+            f' class="text-gray-600 hover:text-red-400 text-xl leading-none">×</button>'
+            f'</div>'
+        )
+    else:
+        lines.append(
+            f'<button onclick="Alpine.store(\'meal\').openFor(\'{date_iso}\')"'
+            f' class="text-gray-500 hover:text-green-400 text-base transition-colors">🍽 + Mahlzeit</button>'
+        )
+    lines.append('</div>')
     return "\n".join(lines)
 
 
 def _render_week_html(data: dict) -> str:
     if not data["days"]:
         return '<p class="text-xl text-gray-500">Keine Vorschau verfügbar.</p>'
-    meal_list_json = json.dumps(data.get("meal_list", []), ensure_ascii=False)
-    lines = [f'<div id="meal-list-data" data-meals=\'{meal_list_json}\' class="hidden"></div>']
+    lines = []
     for day in data["days"]:
         w = day.get("weather")
         weather_str = (
@@ -250,13 +266,21 @@ async def test_reminder(request: Request):
 
 @app.get("/api/today")
 def api_today(request: Request):
+    today = datetime.now(TZ).date()
     try:
         events = get_events_today()
     except Exception as exc:
         logger.error("get_events_today failed: %s", exc)
         events = []
+    try:
+        meal = get_plan().get(today.isoformat())
+    except Exception as exc:
+        logger.error("get_plan failed: %s", exc)
+        meal = None
     data = {
         "date": datetime.now(TZ).strftime("%d.%m.%Y"),
+        "date_iso": today.isoformat(),
+        "meal": meal,
         "events": [
             {"title": e["title"], "time": _event_time_str(e), "location": e["location"]}
             for e in events
@@ -271,7 +295,7 @@ def api_today(request: Request):
 def api_week(request: Request):
     today = datetime.now(TZ).date()
     tomorrow = today + timedelta(days=1)
-    end = today + timedelta(days=4)
+    end = today + timedelta(days=5)
 
     try:
         forecast = {f["date"]: f for f in get_forecast(days=5)}
@@ -297,7 +321,7 @@ def api_week(request: Request):
 
     days = []
     for i in range(5):
-        day = today + timedelta(days=i)
+        day = tomorrow + timedelta(days=i)
         day_str = day.isoformat()
         day_events = [
             {"title": e["title"], "time": _event_time_str(e), "location": e["location"]}
@@ -352,6 +376,11 @@ def complete_grocery(task_id: str):
     except Exception as exc:
         logger.error("complete_task failed: %s", exc)
     return HTMLResponse("")
+
+
+@app.get("/api/meals")
+def api_meals():
+    return {"plan": get_plan(), "list": get_meal_list()}
 
 
 @app.post("/api/meals/plan/{day}")

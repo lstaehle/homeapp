@@ -54,7 +54,7 @@ def get_forecast(days: int = 5) -> list[dict]:
     daily = r.json()["daily"]
 
     result = []
-    for i in range(0, days):
+    for i in range(1, days + 1):
         code = daily["weather_code"][i]
         emoji, description = _WMO.get(code, ("🌡️", "Unbekannt"))
         result.append({
