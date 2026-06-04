@@ -2,20 +2,26 @@ import os
 
 import httpx
 
-_BASE = "https://api.todoist.com/rest/v2"
+_BASE = "https://api.todoist.com/api/v1"
 
 
 def _headers() -> dict:
     return {"Authorization": f"Bearer {os.environ['TODOIST_API_TOKEN']}"}
 
 
+def _get(path: str, **params) -> dict:
+    r = httpx.get(f"{_BASE}{path}", headers=_headers(), params=params or None, timeout=10)
+    r.raise_for_status()
+    return r.json()
+
+
 def get_restock_items() -> list[str]:
     project_name = os.environ["TODOIST_PROJECT_NAME"]
 
-    projects = httpx.get(f"{_BASE}/projects", headers=_headers(), timeout=10).raise_for_status().json()
+    projects = _get("/projects")["results"]
     project = next((p for p in projects if p["name"] == project_name), None)
     if not project:
         return []
 
-    tasks = httpx.get(f"{_BASE}/tasks", headers=_headers(), params={"project_id": project["id"]}, timeout=10).raise_for_status().json()
+    tasks = _get("/tasks", project_id=project["id"])["results"]
     return [t["content"] for t in tasks]

@@ -13,11 +13,11 @@ def env_vars(monkeypatch):
 
 @respx.mock
 def test_get_restock_items_returns_task_names():
-    respx.get("https://api.todoist.com/rest/v2/projects").mock(
-        return_value=httpx.Response(200, json=[{"id": "123", "name": "Einkauf"}])
+    respx.get("https://api.todoist.com/api/v1/projects").mock(
+        return_value=httpx.Response(200, json={"results": [{"id": "123", "name": "Einkauf"}]})
     )
-    respx.get("https://api.todoist.com/rest/v2/tasks").mock(
-        return_value=httpx.Response(200, json=[{"content": "Milch"}, {"content": "Butter"}])
+    respx.get("https://api.todoist.com/api/v1/tasks").mock(
+        return_value=httpx.Response(200, json={"results": [{"content": "Milch"}, {"content": "Butter"}]})
     )
 
     from app.todoist import get_restock_items
@@ -26,14 +26,14 @@ def test_get_restock_items_returns_task_names():
 
 @respx.mock
 def test_get_restock_items_filters_by_project():
-    respx.get("https://api.todoist.com/rest/v2/projects").mock(
-        return_value=httpx.Response(200, json=[
+    respx.get("https://api.todoist.com/api/v1/projects").mock(
+        return_value=httpx.Response(200, json={"results": [
             {"id": "123", "name": "Einkauf"},
             {"id": "999", "name": "Arbeit"},
-        ])
+        ]})
     )
-    tasks_route = respx.get("https://api.todoist.com/rest/v2/tasks").mock(
-        return_value=httpx.Response(200, json=[{"content": "Kaffee"}])
+    tasks_route = respx.get("https://api.todoist.com/api/v1/tasks").mock(
+        return_value=httpx.Response(200, json={"results": [{"content": "Kaffee"}]})
     )
 
     from app.todoist import get_restock_items
@@ -45,11 +45,11 @@ def test_get_restock_items_filters_by_project():
 
 @respx.mock
 def test_get_restock_items_empty():
-    respx.get("https://api.todoist.com/rest/v2/projects").mock(
-        return_value=httpx.Response(200, json=[{"id": "123", "name": "Einkauf"}])
+    respx.get("https://api.todoist.com/api/v1/projects").mock(
+        return_value=httpx.Response(200, json={"results": [{"id": "123", "name": "Einkauf"}]})
     )
-    respx.get("https://api.todoist.com/rest/v2/tasks").mock(
-        return_value=httpx.Response(200, json=[])
+    respx.get("https://api.todoist.com/api/v1/tasks").mock(
+        return_value=httpx.Response(200, json={"results": []})
     )
 
     from app.todoist import get_restock_items
