@@ -46,7 +46,7 @@ def parse_date_and_title(text: str) -> tuple[date, str | None]:
 
 
 def parse_date(text: str) -> date:
-    parts = text.strip().split(".")
+    parts = [p for p in text.strip().split(".") if p]  # strip trailing dot, ignore empty
     try:
         if len(parts) == 2:
             day, month = int(parts[0]), int(parts[1])
@@ -62,11 +62,11 @@ def parse_date(text: str) -> date:
 
 def parse_time(text: str) -> time:
     text = text.strip()
-    if not re.match(r"^\d{2}:\d{2}$", text):
+    if not re.match(r"^\d{1,2}:\d{2}$", text):
         raise ValueError(f"Ungültiges Zeitformat: {text!r}")
-    hour, minute = int(text[:2]), int(text[3:])
+    h, m = text.split(":")
     try:
-        return time(hour, minute)
+        return time(int(h), int(m))
     except ValueError as exc:
         raise ValueError(f"Ungültige Uhrzeit: {text!r}") from exc
 
@@ -89,11 +89,51 @@ def parse_duration(text: str) -> DurationResult:
 # ---------------------------------------------------------------------------
 
 async def cmd_neuesevent(update: Update, context) -> int:
-    await update.message.reply_text(
-        "Datum eingeben (TT.MM oder TT.MM.JJJJ), optional gefolgt vom Titel:\n"
-        "Beispiel: 25.12 Familien-Weihnachten"
-    )
-    return DATE_TITLE
+    if not context.args:
+        await update.message.reply_text(
+            "Datum eingeben (TT.MM oder TT.MM.JJJJ), optional gefolgt vom Titel:\n"
+            "Beispiel: 25.12 Familien-Weihnachten"
+        )
+        return DATE_TITLE
+
+    # Inline format: /event D.M. HH:MM Titel
+    args = context.args
+    if len(args) < 3:
+        await update.message.reply_text(
+            "❌ Format: /event TT.MM HH:MM Titel\n"
+            "Beispiel: /event 5.6. 14:30 Zahnarzt\n\n"
+            "Oder einfach /event für den geführten Dialog."
+        )
+        return ConversationHandler.END
+
+    try:
+        event_date = parse_date(args[0])
+    except ValueError:
+        await update.message.reply_text("❌ Ungültiges Datum. Format: TT.MM oder TT.MM.JJJJ")
+        return ConversationHandler.END
+
+    try:
+        event_time = parse_time(args[1])
+    except ValueError:
+        await update.message.reply_text("❌ Ungültige Uhrzeit. Format: HH:MM oder H:MM")
+        return ConversationHandler.END
+
+    title = " ".join(args[2:]).strip()
+    start_dt = datetime.combine(event_date, event_time, tzinfo=TZ)
+    end_dt = start_dt + timedelta(hours=1)
+
+    try:
+        create_event(title=title, start_dt=start_dt, end_dt=end_dt)
+        await update.message.reply_text(
+            f"✅ Termin gespeichert!\n"
+            f"📅 {event_date.strftime('%d.%m.%Y')} um {event_time.strftime('%H:%M')}\n"
+            f"📌 {title}"
+        )
+    except Exception as exc:
+        logger.error("create_event failed: %s", exc)
+        await update.message.reply_text("❌ Fehler beim Speichern des Termins.")
+
+    return ConversationHandler.END
 
 
 async def receive_date_and_title(update: Update, context) -> int:
