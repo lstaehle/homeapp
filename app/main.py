@@ -24,9 +24,13 @@ from app.gcalendar import get_events_today, get_events_this_week, get_events_ran
 from app.reminders import daily_reminder, register_jobs
 from app.scheduler import get_scheduler
 from app.notes import add_note, delete_note, get_notes
-from app.todoist import complete_task, get_restock_items
+from app.todoist import complete_task, create_task, get_restock_items
 from app.weather import get_weather, get_forecast
-from app.meals import get_plan, set_meal, delete_meal, get_meal_list, add_to_meal_list
+from app.meals import (
+    get_plan, set_meal, delete_meal,
+    get_meal_list, get_meal_names, add_to_meal_list, set_meal_ingredients,
+    get_pending_ingredients, mark_ingredients_sent,
+)
 
 
 class MealBody(BaseModel):
@@ -197,18 +201,50 @@ def _render_notes_html(notes: list[dict]) -> str:
     return "".join(parts)
 
 
-def _render_grocery_html(groups: list[dict]) -> str:
-    if not groups:
-        return '<p class="text-xl text-gray-500">Keine Einträge.</p>'
+def _render_grocery_html(groups: list[dict], pending: list[dict] | None = None) -> str:
     parts = []
+
+    if pending:
+        parts.append('<div class="mb-3">')
+        parts.append(
+            '<p class="text-sm font-semibold text-purple-400 uppercase tracking-wide mb-2">⏳ Ausstehend</p>'
+        )
+        for p in pending:
+            parts.append(
+                f'<div class="mb-3 bg-gray-700/50 rounded-xl p-3">'
+                f'<p class="text-sm text-gray-400 mb-1">{p["label"]} — {p["meal"]}</p>'
+                f'<ul class="mb-2 space-y-0.5">'
+            )
+            for ing in p["ingredients"]:
+                parts.append(f'<li class="text-base text-gray-200">• {ing}</li>')
+            parts.append(
+                f'</ul>'
+                f'<button'
+                f' hx-post="/api/grocery/pending/{p["date"]}/confirm"'
+                f' hx-target="#panel-einkauf"'
+                f' hx-swap="innerHTML"'
+                f' hx-headers=\'{{"HX-Request": "true"}}\''
+                f' class="text-sm text-purple-400 hover:text-purple-200 transition-colors">'
+                f'+ Zur Einkaufsliste hinzufügen'
+                f'</button>'
+                f'</div>'
+            )
+        parts.append('</div>')
+        if groups:
+            parts.append('<hr class="border-gray-700 mb-3">')
+
+    if not groups and not pending:
+        return '<p class="text-xl text-gray-500">Keine Einträge.</p>'
+
+    todoist_parts = []
     for group in groups:
         if group["section"]:
-            parts.append(
+            todoist_parts.append(
                 f'<p class="text-sm font-semibold text-yellow-400 uppercase tracking-wide mt-4 mb-1">'
                 f'{group["section"]}</p>'
             )
         for item in group["items"]:
-            parts.append(
+            todoist_parts.append(
                 f'<li id="grocery-{item["id"]}" class="flex items-center gap-3 py-1">'
                 f'<button'
                 f' hx-post="/api/grocery/{item["id"]}/complete"'
@@ -220,7 +256,10 @@ def _render_grocery_html(groups: list[dict]) -> str:
                 f'<span class="text-xl">{item["content"]}</span>'
                 f'</li>'
             )
-    return f'<ul class="space-y-0">{"".join(parts)}</ul>'
+    if todoist_parts:
+        parts.append(f'<ul class="space-y-0">{"".join(todoist_parts)}</ul>')
+
+    return "".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -350,9 +389,14 @@ def api_grocery(request: Request):
     except Exception as exc:
         logger.error("get_restock_items failed: %s", exc)
         items = []
+    try:
+        pending = get_pending_ingredients()
+    except Exception as exc:
+        logger.error("get_pending_ingredients failed: %s", exc)
+        pending = []
     if request.headers.get("HX-Request"):
-        return HTMLResponse(_render_grocery_html(items))
-    return items
+        return HTMLResponse(_render_grocery_html(items, pending))
+    return {"items": items, "pending": pending}
 
 
 @app.get("/api/notes")
@@ -381,6 +425,44 @@ def complete_grocery(task_id: str):
 @app.get("/api/meals")
 def api_meals():
     return {"plan": get_plan(), "list": get_meal_list()}
+
+
+@app.get("/api/meals/config")
+def api_meals_config():
+    return get_meal_list()
+
+
+class IngredientsBody(BaseModel):
+    ingredients: list[str]
+
+
+@app.put("/api/meals/config/{meal_name}")
+def api_set_meal_ingredients(meal_name: str, body: IngredientsBody):
+    set_meal_ingredients(meal_name, body.ingredients)
+    return {"ok": True}
+
+
+@app.post("/api/grocery/pending/{day}/confirm")
+def api_confirm_pending(day: str, request: Request):
+    pending = get_pending_ingredients()
+    for p in pending:
+        if p["date"] == day:
+            for ingredient in p["ingredients"]:
+                try:
+                    create_task(ingredient)
+                except Exception as exc:
+                    logger.error("create_task failed for %r: %s", ingredient, exc)
+            mark_ingredients_sent(day)
+            break
+    try:
+        items = get_restock_items()
+    except Exception as exc:
+        logger.error("get_restock_items failed: %s", exc)
+        items = []
+    remaining_pending = get_pending_ingredients()
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(_render_grocery_html(items, remaining_pending))
+    return {"ok": True}
 
 
 @app.post("/api/meals/plan/{day}")

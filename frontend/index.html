@@ -19,13 +19,14 @@
           this.open = true;
           const r = await fetch('/api/meals');
           const data = await r.json();
-          this.meals = data.list;
+          this.meals = data.list; // [{name, ingredients}]
         },
         async select(meal) {
+          const mealName = typeof meal === 'string' ? meal : meal.name;
           await fetch('/api/meals/plan/' + this.date, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({meal: meal})
+            body: JSON.stringify({meal: mealName})
           });
           this.open = false;
           htmx.trigger(document.getElementById('panel-heute'), 'refresh');
@@ -39,13 +40,51 @@
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({meal: meal})
           });
-          this.meals.push(meal);
+          this.meals.push({name: meal, ingredients: []});
           this.newMeal = '';
         },
         async remove(date) {
           await fetch('/api/meals/plan/' + date, {method: 'DELETE'});
           htmx.trigger(document.getElementById('panel-heute'), 'refresh');
           htmx.trigger(document.getElementById('panel-woche'), 'refresh');
+        }
+      });
+
+      Alpine.store('mealConfig', {
+        open: false,
+        meals: [],
+        selected: null,
+        newIngredient: '',
+        async openConfig() {
+          const r = await fetch('/api/meals/config');
+          this.meals = await r.json();
+          this.selected = null;
+          this.newIngredient = '';
+          this.open = true;
+        },
+        selectMeal(meal) {
+          this.selected = {name: meal.name, ingredients: [...meal.ingredients]};
+          this.newIngredient = '';
+        },
+        async addIngredient() {
+          const ing = this.newIngredient.trim();
+          if (!ing || !this.selected) return;
+          this.selected.ingredients.push(ing);
+          this.newIngredient = '';
+          await this.save();
+        },
+        async removeIngredient(i) {
+          this.selected.ingredients.splice(i, 1);
+          await this.save();
+        },
+        async save() {
+          await fetch('/api/meals/config/' + encodeURIComponent(this.selected.name), {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ingredients: this.selected.ingredients})
+          });
+          const m = this.meals.find(m => m.name === this.selected.name);
+          if (m) m.ingredients = [...this.selected.ingredients];
         }
       });
     });
@@ -66,10 +105,10 @@
       <h3 class="text-2xl font-bold mb-4">🍽 Mahlzeit wählen</h3>
       <div class="flex-1 overflow-y-auto mb-4">
         <div class="grid grid-cols-2 gap-2">
-          <template x-for="meal in $store.meal.meals" :key="meal">
+          <template x-for="meal in $store.meal.meals" :key="meal.name">
             <button @click="$store.meal.select(meal)"
                     class="bg-gray-700 hover:bg-blue-600 rounded-xl px-3 py-2 text-left text-base transition-colors"
-                    x-text="meal"></button>
+                    x-text="meal.name"></button>
           </template>
         </div>
       </div>
@@ -85,6 +124,61 @@
         <button @click="$store.meal.open = false"
                 class="w-full text-gray-500 hover:text-gray-300 text-sm transition-colors">Abbrechen</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Meal config modal -->
+  <div x-data x-show="$store.mealConfig.open" x-cloak
+       @click.self="$store.mealConfig.open = false"
+       class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+    <div class="bg-gray-800 rounded-2xl shadow-2xl flex w-[640px] max-h-[80vh]" style="min-height:400px">
+
+      <!-- Left: meal list -->
+      <div class="w-52 border-r border-gray-700 flex flex-col p-4">
+        <p class="text-lg font-bold mb-3">⚙️ Mahlzeiten</p>
+        <div class="flex-1 overflow-y-auto space-y-1">
+          <template x-for="meal in $store.mealConfig.meals" :key="meal.name">
+            <button @click="$store.mealConfig.selectMeal(meal)"
+                    :class="$store.mealConfig.selected?.name === meal.name
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 hover:bg-gray-600 text-gray-200'"
+                    class="w-full text-left rounded-lg px-3 py-2 text-base transition-colors"
+                    x-text="meal.name"></button>
+          </template>
+        </div>
+      </div>
+
+      <!-- Right: ingredient editor -->
+      <div class="flex-1 flex flex-col p-5">
+        <div x-show="!$store.mealConfig.selected" class="text-gray-500 text-base mt-4">
+          Mahlzeit auswählen, um Zutaten zu bearbeiten.
+        </div>
+        <div x-show="$store.mealConfig.selected" class="flex flex-col h-full">
+          <p class="text-xl font-bold mb-3" x-text="$store.mealConfig.selected?.name"></p>
+          <div class="flex-1 overflow-y-auto mb-3 space-y-1">
+            <template x-for="(ing, i) in $store.mealConfig.selected?.ingredients ?? []" :key="i">
+              <div class="flex items-center justify-between bg-gray-700 rounded-lg px-3 py-2">
+                <span class="text-base" x-text="ing"></span>
+                <button @click="$store.mealConfig.removeIngredient(i)"
+                        class="text-gray-500 hover:text-red-400 text-lg leading-none ml-2">×</button>
+              </div>
+            </template>
+            <p x-show="($store.mealConfig.selected?.ingredients ?? []).length === 0"
+               class="text-gray-500 text-sm">Noch keine Zutaten.</p>
+          </div>
+          <div class="flex gap-2 border-t border-gray-700 pt-3">
+            <input x-model="$store.mealConfig.newIngredient"
+                   @keydown.enter="$store.mealConfig.addIngredient()"
+                   placeholder="Zutat hinzufügen…"
+                   class="flex-1 bg-gray-700 rounded-xl px-3 py-2 text-base outline-none focus:ring-2 focus:ring-blue-500" />
+            <button @click="$store.mealConfig.addIngredient()"
+                    class="bg-green-700 hover:bg-green-600 rounded-xl px-4 py-2 text-base transition-colors">+</button>
+          </div>
+        </div>
+        <button @click="$store.mealConfig.open = false"
+                class="mt-4 text-gray-500 hover:text-gray-300 text-sm transition-colors self-end">Schließen</button>
+      </div>
+
     </div>
   </div>
 
@@ -115,7 +209,11 @@
 
     <!-- Diese Woche (30%) -->
     <div class="flex-[3] bg-gray-800 rounded-2xl p-6 flex flex-col min-h-0">
-      <h2 class="text-3xl font-bold mb-4 text-green-300">🗓 Diese Woche</h2>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-3xl font-bold text-green-300">🗓 Diese Woche</h2>
+        <button x-data @click="$store.mealConfig.openConfig()"
+                class="text-gray-500 hover:text-gray-300 text-xl transition-colors" title="Mahlzeiten konfigurieren">⚙️</button>
+      </div>
       <div
         id="panel-woche"
         class="flex-1 overflow-y-auto"

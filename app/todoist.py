@@ -15,16 +15,18 @@ def _get(path: str, **params) -> dict:
     return r.json()
 
 
-def get_restock_items() -> list[dict]:
-    """Return tasks grouped by section: [{"section": str|None, "items": [{id, content}]}]"""
+def _get_project_id() -> str | None:
     project_name = os.environ["TODOIST_PROJECT_NAME"]
-
     projects = _get("/projects")["results"]
     project = next((p for p in projects if p["name"] == project_name), None)
-    if not project:
-        return []
+    return project["id"] if project else None
 
-    project_id = project["id"]
+
+def get_restock_items() -> list[dict]:
+    """Return tasks grouped by section: [{"section": str|None, "items": [{id, content}]}]"""
+    project_id = _get_project_id()
+    if not project_id:
+        return []
     sections = {s["id"]: s["name"] for s in _get("/sections", project_id=project_id)["results"]}
     tasks = _get("/tasks", project_id=project_id)["results"]
 
@@ -43,3 +45,13 @@ def get_restock_items() -> list[dict]:
 
 def complete_task(task_id: str) -> None:
     httpx.post(f"{_BASE}/tasks/{task_id}/close", headers=_headers(), timeout=10).raise_for_status()
+
+
+def create_task(content: str) -> None:
+    project_id = _get_project_id()
+    httpx.post(
+        f"{_BASE}/tasks",
+        headers=_headers(),
+        json={"content": content, "project_id": project_id},
+        timeout=10,
+    ).raise_for_status()
