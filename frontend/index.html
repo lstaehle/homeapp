@@ -57,6 +57,9 @@
         selected: null,
         newIngredient: '',
         newMealName: '',
+        todoistTasks: [],
+        todoistFilter: '',
+        showTodoistPicker: false,
         async openConfig() {
           const [configR, sectionsR] = await Promise.all([
             fetch('/api/meals/config'),
@@ -67,7 +70,31 @@
           this.selected = null;
           this.newIngredient = '';
           this.newMealName = '';
+          this.todoistTasks = [];
+          this.todoistFilter = '';
+          this.showTodoistPicker = false;
           this.open = true;
+        },
+        async loadTodoistTasks() {
+          if (this.todoistTasks.length > 0) return;
+          try {
+            const r = await fetch('/api/todoist/tasks');
+            this.todoistTasks = await r.json();
+          } catch(e) {
+            this.todoistTasks = [];
+          }
+        },
+        filteredTodoistTasks() {
+          const f = this.todoistFilter.toLowerCase();
+          if (!f) return this.todoistTasks;
+          return this.todoistTasks.filter(t => t.toLowerCase().includes(f));
+        },
+        async addIngredientFromTodoist(name) {
+          if (!this.selected) return;
+          if (this.selected.ingredients.some(i => i.name.toLowerCase() === name.toLowerCase())) return;
+          this.selected.ingredients.push({name, section_id: null});
+          this.selected.ingredients.sort((a, b) => a.name.localeCompare(b.name));
+          await this.save();
         },
         selectMeal(meal) {
           this.selected = {name: meal.name, ingredients: meal.ingredients.map(i => ({...i}))};
@@ -216,6 +243,27 @@
             <p x-show="($store.mealConfig.selected?.ingredients ?? []).length === 0"
                class="text-gray-500 text-sm">Noch keine Zutaten.</p>
           </div>
+          <!-- Todoist picker -->
+          <div class="mb-2">
+            <button @click="$store.mealConfig.showTodoistPicker = !$store.mealConfig.showTodoistPicker; $store.mealConfig.loadTodoistTasks()"
+                    class="text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                    x-text="$store.mealConfig.showTodoistPicker ? '▲ Von Todoist' : '▼ Von Todoist'"></button>
+            <div x-show="$store.mealConfig.showTodoistPicker" class="mt-1">
+              <input x-model="$store.mealConfig.todoistFilter"
+                     placeholder="Suchen…"
+                     class="w-full bg-gray-700 rounded-lg px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-purple-500 mb-1" />
+              <div class="max-h-28 overflow-y-auto space-y-px">
+                <template x-for="task in $store.mealConfig.filteredTodoistTasks()" :key="task">
+                  <button @click="$store.mealConfig.addIngredientFromTodoist(task)"
+                          class="block w-full text-left text-sm px-2 py-1 rounded hover:bg-gray-700 text-gray-300 truncate transition-colors"
+                          x-text="task"></button>
+                </template>
+                <p x-show="$store.mealConfig.filteredTodoistTasks().length === 0"
+                   class="text-xs text-gray-600 px-2 py-1">Keine Tasks gefunden.</p>
+              </div>
+            </div>
+          </div>
+
           <div class="flex gap-2 border-t border-gray-700 pt-3">
             <input x-model="$store.mealConfig.newIngredient"
                    @keydown.enter="$store.mealConfig.addIngredient()"

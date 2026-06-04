@@ -22,22 +22,52 @@ def _get_project_id() -> str | None:
     return project["id"] if project else None
 
 
+def _get_completed_tasks(project_id: str) -> list[dict]:
+    """Best-effort: returns [] on any error."""
+    try:
+        data = _get("/tasks/completed/get_all", project_id=project_id, limit=200)
+        raw = data.get("items") or data.get("results") or []
+        return [
+            {
+                "id": str(t.get("task_id") or t.get("id") or ""),
+                "content": t.get("content", ""),
+                "section_id": t.get("section_id") or None,
+            }
+            for t in raw
+            if t.get("content")
+        ]
+    except Exception:
+        return []
+
+
 def get_restock_items() -> list[dict]:
-    """Return tasks grouped by section: [{"section": str|None, "items": [{id, content}]}]"""
+    """Return tasks grouped by section: [{"section": str|None, "items": [...], "completed": [...]}]"""
     project_id = _get_project_id()
     if not project_id:
         return []
     sections = {s["id"]: s["name"] for s in _get("/sections", project_id=project_id)["results"]}
     tasks = _get("/tasks", project_id=project_id)["results"]
+    completed = _get_completed_tasks(project_id)
 
     by_section: dict[str | None, list] = {}
     for t in tasks:
         sid = t.get("section_id") or None
         by_section.setdefault(sid, []).append({"id": t["id"], "content": t["content"]})
 
+    completed_by_section: dict[str | None, list] = {}
+    for t in completed:
+        sid = t.get("section_id") or None
+        completed_by_section.setdefault(sid, []).append({"content": t["content"]})
+
+    all_sids = set(by_section.keys()) | set(completed_by_section.keys())
+
     result = []
-    for sid, items in by_section.items():
-        result.append({"section": sections.get(sid) if sid else None, "items": items})
+    for sid in all_sids:
+        result.append({
+            "section": sections.get(sid) if sid else None,
+            "items": by_section.get(sid, []),
+            "completed": completed_by_section.get(sid, []),
+        })
 
     result.sort(key=lambda g: (g["section"] is None, g["section"] or ""))
     return result
@@ -62,3 +92,24 @@ def create_task(content: str, section_id: str | None = None) -> None:
     if section_id:
         body["section_id"] = section_id
     httpx.post(f"{_BASE}/tasks", headers=_headers(), json=body, timeout=10).raise_for_status()
+
+
+def get_all_task_names() -> list[str]:
+    """Returns deduplicated sorted task names (active + completed) for the ingredient picker."""
+    project_id = _get_project_id()
+    if not project_id:
+        return []
+    try:
+        active = [t["content"] for t in _get("/tasks", project_id=project_id)["results"]]
+    except Exception:
+        active = []
+    completed = [t["content"] for t in _get_completed_tasks(project_id)]
+    seen: set[str] = set()
+    result = []
+    for name in active + completed:
+        key = name.casefold()
+        if key not in seen:
+            seen.add(key)
+            result.append(name)
+    result.sort(key=str.casefold)
+    return result

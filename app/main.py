@@ -25,7 +25,7 @@ from app.gcalendar import get_events_today, get_events_this_week, get_events_ran
 from app.reminders import daily_reminder, register_jobs
 from app.scheduler import get_scheduler
 from app.notes import add_note, delete_note, get_notes
-from app.todoist import complete_task, create_task, get_restock_items, get_sections
+from app.todoist import complete_task, create_task, get_restock_items, get_sections, get_all_task_names
 from app.weather import get_weather, get_forecast
 from app.meals import (
     get_plan, set_meal, delete_meal,
@@ -205,6 +205,9 @@ def _render_notes_html(notes: list[dict]) -> str:
 def _render_grocery_html(groups: list[dict], pending: list[dict] | None = None) -> str:
     parts = []
 
+    # Case-insensitive set of active Todoist task names for dedup in Ausstehend
+    active_names = {item["content"].casefold() for group in groups for item in group.get("items", [])}
+
     if pending:
         parts.append('<div class="mb-3">')
         parts.append(
@@ -221,17 +224,25 @@ def _render_grocery_html(groups: list[dict], pending: list[dict] | None = None) 
                 section_id = ing.get("section_id") or ""
                 encoded = urlquote(name, safe='')
                 section_param = f"?section_id={section_id}" if section_id else ""
-                parts.append(
-                    f'<li class="flex items-center justify-between gap-2">'
-                    f'<span class="text-base text-gray-200">• {name}</span>'
-                    f'<button'
-                    f' hx-post="/api/grocery/item/{encoded}{section_param}"'
-                    f' hx-target="closest li"'
-                    f' hx-swap="outerHTML"'
-                    f' class="text-purple-400 hover:text-green-400 text-xl leading-none flex-shrink-0'
-                    f' transition-colors">+</button>'
-                    f'</li>'
-                )
+                if name.casefold() in active_names:
+                    parts.append(
+                        f'<li class="flex items-center justify-between gap-2">'
+                        f'<span class="text-base text-gray-500 line-through">• {name}</span>'
+                        f'<span class="text-gray-600 text-sm">✓</span>'
+                        f'</li>'
+                    )
+                else:
+                    parts.append(
+                        f'<li class="flex items-center justify-between gap-2">'
+                        f'<span class="text-base text-gray-200">• {name}</span>'
+                        f'<button'
+                        f' hx-post="/api/grocery/item/{encoded}{section_param}"'
+                        f' hx-target="closest li"'
+                        f' hx-swap="outerHTML"'
+                        f' class="text-purple-400 hover:text-green-400 text-xl leading-none flex-shrink-0'
+                        f' transition-colors">+</button>'
+                        f'</li>'
+                    )
             parts.append(f'</ul></div>')
         parts.append('</div>')
         if groups:
@@ -242,12 +253,16 @@ def _render_grocery_html(groups: list[dict], pending: list[dict] | None = None) 
 
     todoist_parts = []
     for group in groups:
+        active = group.get("items", [])
+        completed = group.get("completed", [])
+        if not active and not completed:
+            continue
         if group["section"]:
             todoist_parts.append(
                 f'<p class="text-sm font-semibold text-yellow-400 uppercase tracking-wide mt-4 mb-1">'
                 f'{group["section"]}</p>'
             )
-        for item in group["items"]:
+        for item in active:
             todoist_parts.append(
                 f'<li id="grocery-{item["id"]}" class="flex items-center gap-3 py-1">'
                 f'<button'
@@ -258,6 +273,14 @@ def _render_grocery_html(groups: list[dict], pending: list[dict] | None = None) 
                 f' hover:border-green-400 hover:bg-green-400/20 active:bg-green-400/40 transition-colors">'
                 f'</button>'
                 f'<span class="text-xl">{item["content"]}</span>'
+                f'</li>'
+            )
+        for item in completed:
+            todoist_parts.append(
+                f'<li class="flex items-center gap-3 py-1 opacity-40">'
+                f'<span class="w-8 h-8 rounded border-2 border-gray-600 flex-shrink-0'
+                f' flex items-center justify-center text-green-500 text-sm">✓</span>'
+                f'<span class="text-xl line-through text-gray-500">{item["content"]}</span>'
                 f'</li>'
             )
     if todoist_parts:
@@ -451,6 +474,15 @@ def api_todoist_sections():
         return get_sections()
     except Exception as exc:
         logger.error("get_sections failed: %s", exc)
+        return []
+
+
+@app.get("/api/todoist/tasks")
+def api_todoist_tasks():
+    try:
+        return get_all_task_names()
+    except Exception as exc:
+        logger.error("get_all_task_names failed: %s", exc)
         return []
 
 
