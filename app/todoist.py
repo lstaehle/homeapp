@@ -27,5 +27,3 @@ def get_restock_items() -> list[dict]:
     return [{"id": t["id"], "content": t["content"]} for t in tasks]
 
 
-def complete_task(task_id: str) -> None:
-    httpx.post(f"{_BASE}/tasks/{task_id}/close", headers=_headers(), timeout=10).raise_for_status()

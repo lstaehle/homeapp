@@ -21,10 +21,13 @@ from app.bot import build_application
 from app.gcalendar import get_events_today, get_events_this_week
 from app.reminders import daily_reminder, register_jobs
 from app.scheduler import get_scheduler
-from app.todoist import complete_task, get_restock_items
+from app.todoist import get_restock_items
 
 TZ = ZoneInfo("Europe/Zurich")
 GERMAN_DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+
+_checked_items: set[str] = set()
+_item_cache: dict[str, str] = {}
 
 
 async def _poll_telegram(bot_app) -> None:
@@ -135,23 +138,35 @@ def _render_week_html(data: dict) -> str:
     return "\n".join(lines)
 
 
+def _render_grocery_item(item: dict, checked: bool) -> str:
+    if checked:
+        btn_cls = ("w-8 h-8 rounded border-2 border-green-500 bg-green-500/30 flex-shrink-0 "
+                   "flex items-center justify-center text-green-400 transition-colors")
+        text_cls = "text-xl line-through text-gray-500"
+        mark = "✓"
+    else:
+        btn_cls = ("w-8 h-8 rounded border-2 border-gray-500 flex-shrink-0 "
+                   "hover:border-green-400 hover:bg-green-400/20 active:bg-green-400/40 transition-colors")
+        text_cls = "text-xl"
+        mark = ""
+    return (
+        f'<li id="grocery-{item["id"]}" class="flex items-center gap-3 py-2">'
+        f'<button hx-post="/api/grocery/{item["id"]}/toggle"'
+        f' hx-target="closest li" hx-swap="outerHTML" class="{btn_cls}">{mark}</button>'
+        f'<span class="{text_cls}">{item["content"]}</span>'
+        f'</li>'
+    )
+
+
 def _render_grocery_html(items: list[dict]) -> str:
     if not items:
         return '<p class="text-xl text-gray-500">Keine Einträge.</p>'
-    rows = []
     for item in items:
-        rows.append(
-            f'<li id="grocery-{item["id"]}" class="flex items-center gap-3 py-2">'
-            f'<button'
-            f' hx-post="/api/grocery/{item["id"]}/complete"'
-            f' hx-target="closest li"'
-            f' hx-swap="outerHTML"'
-            f' class="w-8 h-8 rounded border-2 border-gray-500 flex-shrink-0'
-            f' hover:border-green-400 hover:bg-green-400/20 active:bg-green-400/40 transition-colors">'
-            f'</button>'
-            f'<span class="text-xl">{item["content"]}</span>'
-            f'</li>'
-        )
+        _item_cache[item["id"]] = item["content"]
+    unchecked = [i for i in items if i["id"] not in _checked_items]
+    checked = [i for i in items if i["id"] in _checked_items]
+    rows = [_render_grocery_item(i, False) for i in unchecked]
+    rows += [_render_grocery_item(i, True) for i in checked]
     return f'<ul class="space-y-1">{"".join(rows)}</ul>'
 
 
@@ -232,13 +247,16 @@ async def api_grocery(request: Request):
     return items
 
 
-@app.post("/api/grocery/{task_id}/complete")
-async def complete_grocery(task_id: str):
-    try:
-        complete_task(task_id)
-    except Exception as exc:
-        logger.error("complete_task failed: %s", exc)
-    return HTMLResponse("")
+@app.post("/api/grocery/{task_id}/toggle")
+async def toggle_grocery(task_id: str):
+    if task_id in _checked_items:
+        _checked_items.discard(task_id)
+        checked = False
+    else:
+        _checked_items.add(task_id)
+        checked = True
+    content = _item_cache.get(task_id, "")
+    return HTMLResponse(_render_grocery_item({"id": task_id, "content": content}, checked))
 
 
 # Static files must be mounted last so API routes take precedence
