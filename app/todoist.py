@@ -41,7 +41,7 @@ def _get_completed_tasks(project_id: str) -> list[dict]:
             {
                 "id": str(t.get("task_id") or t.get("id") or ""),
                 "content": t.get("content", ""),
-                "section_id": t.get("section_id") or None,
+                "section_id": str(t["section_id"]) if t.get("section_id") else None,
             }
             for t in raw
             if t.get("content")
@@ -56,18 +56,23 @@ def get_restock_items() -> list[dict]:
     project_id = _get_project_id()
     if not project_id:
         return []
-    sections = {s["id"]: s["name"] for s in _get("/sections", project_id=project_id)["results"]}
+    sections = {str(s["id"]): s["name"] for s in _get("/sections", project_id=project_id)["results"]}
     tasks = _get("/tasks", project_id=project_id)["results"]
     completed = _get_completed_tasks(project_id)
+    logger.info("sections: %s", sections)
+
+    def _sid(raw) -> str | None:
+        return str(raw) if raw else None
 
     by_section: dict[str | None, list] = {}
     for t in tasks:
-        sid = t.get("section_id") or None
+        sid = _sid(t.get("section_id"))
         by_section.setdefault(sid, []).append({"id": t["id"], "content": t["content"]})
+        logger.debug("task %r section_id=%r → sid=%r", t["content"], t.get("section_id"), sid)
 
     completed_by_section: dict[str | None, list] = {}
     for t in completed:
-        sid = t.get("section_id") or None
+        sid = _sid(t.get("section_id"))
         completed_by_section.setdefault(sid, []).append({"content": t["content"]})
 
     # Build result: iterate active sections first, then append completed-only sections
