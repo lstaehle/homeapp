@@ -38,16 +38,17 @@ def get_weather() -> dict | None:
     if not lat or not lon:
         return None
 
-    r = httpx.get(
-        _BASE,
-        params={
-            "latitude": lat,
-            "longitude": lon,
-            "current": "temperature_2m,apparent_temperature,weather_code",
-            "timezone": "Europe/Zurich",
-        },
-        timeout=15,
-    )
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "current": "temperature_2m,apparent_temperature,weather_code",
+        "timezone": "Europe/Zurich",
+    }
+    elev = os.environ.get("WEATHER_ELEVATION", "").strip()
+    if elev:
+        params["elevation"] = elev
+
+    r = httpx.get(_BASE, params=params, timeout=15)
     r.raise_for_status()
     current = r.json()["current"]
 
