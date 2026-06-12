@@ -351,8 +351,37 @@ async def cmd_meals(update: Update, context) -> None:
     await update.message.reply_text("\n".join(lines))
 
 
-async def cmd_woche(update: Update, context) -> None:
-    """/woche — show all events in the next 7 days."""
+async def cmd_today(update: Update, context) -> None:
+    """/today — show all events for today."""
+    today = datetime.now(TZ).date()
+    start_dt = datetime.combine(today, datetime.min.time()).replace(tzinfo=TZ)
+    end_dt = datetime.combine(today, datetime.max.time().replace(microsecond=0)).replace(tzinfo=TZ)
+
+    try:
+        events = get_events_range(start_dt, end_dt)
+    except Exception as exc:
+        logger.error("get_events_range failed: %s", exc)
+        await update.message.reply_text("❌ Fehler beim Laden der Termine.")
+        return
+
+    if not events:
+        await update.message.reply_text(f"📅 Heute keine Termine.")
+        return
+
+    lines = [f"📅 *Heute, {today.strftime('%d.%m.')}*"]
+    for event in events:
+        raw = event["start"]
+        if "T" in raw:
+            time_str = datetime.fromisoformat(raw).astimezone(TZ).strftime("%H:%M")
+        else:
+            time_str = "Ganztägig"
+        lines.append(f"• {time_str} – {event['title']}")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def cmd_week(update: Update, context) -> None:
+    """/week — show all events in the next 7 days."""
     today = datetime.now(TZ).date()
     end = today + timedelta(days=6)
     start_dt = datetime.combine(today, datetime.min.time()).replace(tzinfo=TZ)
@@ -395,7 +424,8 @@ async def cmd_help(update: Update, context) -> None:
         "📋 Verfügbare Befehle:\n\n"
         "📅 *Termine*\n"
         "/event — Neuen Termin erstellen\n"
-        "/woche — Termine nächste 7 Tage\n"
+        "/today — Termine heute\n"
+        "/week — Termine nächste 7 Tage\n"
         "/skip — Beschreibung überspringen\n"
         "/abbrechen — Eingabe abbrechen\n\n"
         "🍽 *Menüplan*\n"
@@ -427,7 +457,8 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("meal", cmd_meal))
     app.add_handler(CommandHandler("delmeal", cmd_delmeal))
     app.add_handler(CommandHandler("meals", cmd_meals))
-    app.add_handler(CommandHandler("woche", cmd_woche))
+    app.add_handler(CommandHandler("today", cmd_today))
+    app.add_handler(CommandHandler("week", cmd_week))
     app.add_handler(_build_conversation_handler())
     app.add_error_handler(_error_handler)
     return app
