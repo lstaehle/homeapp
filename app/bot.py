@@ -18,7 +18,7 @@ from telegram.ext import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from app.gcalendar import create_event
+from app.gcalendar import create_event, get_events_range
 from app.notes import add_note
 from app.meals import get_plan, set_meal, delete_meal, get_meal_list, add_to_meal_list
 
@@ -351,11 +351,51 @@ async def cmd_meals(update: Update, context) -> None:
     await update.message.reply_text("\n".join(lines))
 
 
+async def cmd_woche(update: Update, context) -> None:
+    """/woche — show all events in the next 7 days."""
+    today = datetime.now(TZ).date()
+    end = today + timedelta(days=6)
+    start_dt = datetime.combine(today, datetime.min.time()).replace(tzinfo=TZ)
+    end_dt = datetime.combine(end, datetime.max.time().replace(microsecond=0)).replace(tzinfo=TZ)
+
+    try:
+        events = get_events_range(start_dt, end_dt)
+    except Exception as exc:
+        logger.error("get_events_range failed: %s", exc)
+        await update.message.reply_text("❌ Fehler beim Laden der Termine.")
+        return
+
+    german_days = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+    by_day: dict[date, list] = {}
+    for event in events:
+        raw = event["start"]
+        if "T" in raw:
+            dt = datetime.fromisoformat(raw).astimezone(TZ)
+            day, time_str = dt.date(), dt.strftime("%H:%M")
+        else:
+            day, time_str = date.fromisoformat(raw), "Ganztägig"
+        by_day.setdefault(day, []).append((time_str, event["title"]))
+
+    if not by_day:
+        await update.message.reply_text("📅 Keine Termine in den nächsten 7 Tagen.")
+        return
+
+    lines = ["📅 *Nächste 7 Tage:*"]
+    for day in sorted(by_day.keys()):
+        label = "Heute" if day == today else german_days[day.weekday()]
+        lines.append(f"\n*{label}, {day.strftime('%d.%m.')}*")
+        for time_str, title in by_day[day]:
+            lines.append(f"• {time_str} – {title}")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
 async def cmd_help(update: Update, context) -> None:
     await update.message.reply_text(
         "📋 Verfügbare Befehle:\n\n"
         "📅 *Termine*\n"
         "/event — Neuen Termin erstellen\n"
+        "/woche — Termine nächste 7 Tage\n"
         "/skip — Beschreibung überspringen\n"
         "/abbrechen — Eingabe abbrechen\n\n"
         "🍽 *Menüplan*\n"
@@ -387,6 +427,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("meal", cmd_meal))
     app.add_handler(CommandHandler("delmeal", cmd_delmeal))
     app.add_handler(CommandHandler("meals", cmd_meals))
+    app.add_handler(CommandHandler("woche", cmd_woche))
     app.add_handler(_build_conversation_handler())
     app.add_error_handler(_error_handler)
     return app
