@@ -73,7 +73,7 @@ def get_restock_items() -> list[dict]:
     completed_by_section: dict[str | None, list] = {}
     for t in completed:
         sid = _sid(t.get("section_id"))
-        completed_by_section.setdefault(sid, []).append({"content": t["content"]})
+        completed_by_section.setdefault(sid, []).append({"id": t["id"], "content": t["content"]})
 
     # Build result: iterate active sections first, then append completed-only sections
     result = []
@@ -106,6 +106,10 @@ def get_restock_items() -> list[dict]:
 
 def complete_task(task_id: str) -> None:
     httpx.post(f"{_BASE}/tasks/{task_id}/close", headers=_headers(), timeout=10).raise_for_status()
+
+
+def reopen_task(task_id: str) -> None:
+    httpx.post(f"{_BASE}/tasks/{task_id}/reopen", headers=_headers(), timeout=10).raise_for_status()
 
 
 def get_sections() -> list[dict]:
