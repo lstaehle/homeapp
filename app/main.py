@@ -25,7 +25,8 @@ from app.gcalendar import get_events_today, get_events_this_week, get_events_ran
 from app.reminders import daily_reminder, register_jobs
 from app.scheduler import get_scheduler
 from app.notes import add_note, delete_note, get_notes
-from app.todoist import complete_task, create_task, get_restock_items, get_sections, get_all_task_names, reopen_task, _get_project_id, _get_completed_tasks
+from app.todoist import complete_task, create_task, get_restock_items, get_sections, get_all_task_names, reopen_task
+from app.grocery_store import add_completed, remove_completed
 from app.weather import get_weather, get_forecast
 from app.meals import (
     get_plan, set_meal, delete_meal,
@@ -263,10 +264,12 @@ def _render_grocery_html(groups: list[dict], pending: list[dict] | None = None) 
             f'<ul class="space-y-0">'
         )
         for item in active:
+            encoded = urlquote(item["content"], safe="")
+            sid = item.get("section_id") or ""
             parts.append(
                 f'<li id="grocery-{item["id"]}" class="flex items-center gap-3 py-1">'
                 f'<button'
-                f' hx-post="/api/grocery/{item["id"]}/complete"'
+                f' hx-post="/api/grocery/{item["id"]}/complete?content={encoded}&section_id={sid}"'
                 f' hx-target="closest li"'
                 f' hx-swap="outerHTML"'
                 f' class="w-8 h-8 rounded border-2 border-gray-500 flex-shrink-0'
@@ -446,7 +449,8 @@ def api_delete_note(note_id: str):
 
 
 @app.post("/api/grocery/{task_id}/complete")
-def complete_grocery(task_id: str):
+def complete_grocery(task_id: str, content: str = "", section_id: str = ""):
+    add_completed(task_id, content, section_id or None)
     try:
         complete_task(task_id)
     except Exception as exc:
@@ -456,6 +460,7 @@ def complete_grocery(task_id: str):
 
 @app.post("/api/grocery/{task_id}/reopen")
 def reopen_grocery(task_id: str):
+    remove_completed(task_id)
     try:
         reopen_task(task_id)
     except Exception as exc:
@@ -473,25 +478,8 @@ def reopen_grocery(task_id: str):
 
 @app.get("/api/grocery/debug")
 def debug_grocery():
-    import httpx, os
-    project_id = _get_project_id()
-    completed = _get_completed_tasks(project_id) if project_id else []
-    # Also try without project_id filter to check if plan supports completed tasks at all
-    try:
-        r = httpx.get(
-            "https://api.todoist.com/sync/v9/items/completed/get_all",
-            headers={"Authorization": f"Bearer {os.environ['TODOIST_API_TOKEN']}"},
-            params={"limit": 5},
-            timeout=10,
-        )
-        no_filter_result = {"status": r.status_code, "body": r.json()}
-    except Exception as e:
-        no_filter_result = {"error": str(e)}
-    return {
-        "project_id": project_id,
-        "completed_with_project_filter": len(completed),
-        "completed_without_filter": no_filter_result,
-    }
+    from app.grocery_store import load_completed
+    return {"completed": load_completed()}
 
 
 @app.get("/api/meals")

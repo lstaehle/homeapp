@@ -56,12 +56,13 @@ def _get_completed_tasks(project_id: str) -> list[dict]:
 
 def get_restock_items() -> list[dict]:
     """Return tasks grouped by section: [{"section": str|None, "items": [...], "completed": [...]}]"""
+    from app.grocery_store import load_completed
     project_id = _get_project_id()
     if not project_id:
         return []
     sections = {str(s["id"]): s["name"] for s in _get("/sections", project_id=project_id)["results"]}
     tasks = _get("/tasks", project_id=project_id)["results"]
-    completed = _get_completed_tasks(project_id)
+    completed = load_completed()
     logger.info("sections: %s", sections)
 
     def _sid(raw) -> str | None:
@@ -70,7 +71,7 @@ def get_restock_items() -> list[dict]:
     by_section: dict[str | None, list] = {}
     for t in tasks:
         sid = _sid(t.get("section_id"))
-        by_section.setdefault(sid, []).append({"id": t["id"], "content": t["content"]})
+        by_section.setdefault(sid, []).append({"id": t["id"], "content": t["content"], "section_id": sid})
         logger.debug("task %r section_id=%r → sid=%r", t["content"], t.get("section_id"), sid)
 
     completed_by_section: dict[str | None, list] = {}
@@ -134,6 +135,7 @@ def create_task(content: str, section_id: str | None = None) -> None:
 
 def get_all_task_names() -> list[str]:
     """Returns deduplicated sorted task names (active + completed) for the ingredient picker."""
+    from app.grocery_store import load_completed
     project_id = _get_project_id()
     if not project_id:
         return []
@@ -141,10 +143,10 @@ def get_all_task_names() -> list[str]:
         active = [t["content"] for t in _get("/tasks", project_id=project_id)["results"]]
     except Exception:
         active = []
-    completed = [t["content"] for t in _get_completed_tasks(project_id)]  # uses Sync API
+    completed_names = [t["content"] for t in load_completed()]
     seen: set[str] = set()
     result = []
-    for name in active + completed:
+    for name in active + completed_names:
         key = name.casefold()
         if key not in seen:
             seen.add(key)
