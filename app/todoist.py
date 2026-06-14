@@ -62,17 +62,20 @@ def get_restock_items() -> list[dict]:
         return []
     sections = {str(s["id"]): s["name"] for s in _get("/sections", project_id=project_id)["results"]}
     tasks = _get("/tasks", project_id=project_id)["results"]
-    completed = load_completed()
     logger.info("sections: %s", sections)
 
     def _sid(raw) -> str | None:
         return str(raw) if raw else None
 
     by_section: dict[str | None, list] = {}
+    active_ids: set[str] = set()
     for t in tasks:
         sid = _sid(t.get("section_id"))
+        active_ids.add(t["id"])
         by_section.setdefault(sid, []).append({"id": t["id"], "content": t["content"], "section_id": sid})
         logger.debug("task %r section_id=%r → sid=%r", t["content"], t.get("section_id"), sid)
+
+    completed = load_completed(active_ids)
 
     completed_by_section: dict[str | None, list] = {}
     for t in completed:
