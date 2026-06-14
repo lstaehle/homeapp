@@ -473,9 +473,25 @@ def reopen_grocery(task_id: str):
 
 @app.get("/api/grocery/debug")
 def debug_grocery():
+    import httpx, os
     project_id = _get_project_id()
     completed = _get_completed_tasks(project_id) if project_id else []
-    return {"project_id": project_id, "completed_count": len(completed), "completed": completed[:10]}
+    # Also try without project_id filter to check if plan supports completed tasks at all
+    try:
+        r = httpx.get(
+            "https://api.todoist.com/sync/v9/items/completed/get_all",
+            headers={"Authorization": f"Bearer {os.environ['TODOIST_API_TOKEN']}"},
+            params={"limit": 5},
+            timeout=10,
+        )
+        no_filter_result = {"status": r.status_code, "body": r.json()}
+    except Exception as e:
+        no_filter_result = {"error": str(e)}
+    return {
+        "project_id": project_id,
+        "completed_with_project_filter": len(completed),
+        "completed_without_filter": no_filter_result,
+    }
 
 
 @app.get("/api/meals")
