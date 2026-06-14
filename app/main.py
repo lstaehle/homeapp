@@ -25,7 +25,7 @@ from app.gcalendar import get_events_today, get_events_this_week, get_events_ran
 from app.reminders import daily_reminder, register_jobs
 from app.scheduler import get_scheduler
 from app.notes import add_note, delete_note, get_notes
-from app.todoist import complete_task, create_task, get_restock_items, get_sections, get_all_task_names, reopen_task
+from app.todoist import complete_task, create_task, get_restock_items, get_sections, get_all_task_names, reopen_task, _get_project_id, _get_completed_tasks
 from app.weather import get_weather, get_forecast
 from app.meals import (
     get_plan, set_meal, delete_meal,
@@ -469,6 +469,13 @@ def reopen_grocery(task_id: str):
     except Exception:
         pending = []
     return HTMLResponse(_render_grocery_html(items, pending))
+
+
+@app.get("/api/grocery/debug")
+def debug_grocery():
+    project_id = _get_project_id()
+    completed = _get_completed_tasks(project_id) if project_id else []
+    return {"project_id": project_id, "completed_count": len(completed), "completed": completed[:10]}
 
 
 @app.get("/api/meals")

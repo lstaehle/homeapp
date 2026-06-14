@@ -34,9 +34,12 @@ def _get_completed_tasks(project_id: str) -> list[dict]:
             params={"project_id": project_id, "limit": 200},
             timeout=10,
         )
+        logger.info("completed tasks HTTP %d: %s", r.status_code, r.text[:500])
         r.raise_for_status()
         raw = r.json().get("items") or []
         logger.info("completed tasks fetched: %d items", len(raw))
+        if raw:
+            logger.info("completed task sample: %s", raw[0])
         return [
             {
                 "id": str(t.get("task_id") or t.get("id") or ""),
@@ -47,7 +50,7 @@ def _get_completed_tasks(project_id: str) -> list[dict]:
             if t.get("content")
         ]
     except Exception as exc:
-        logger.warning("_get_completed_tasks failed: %s", exc)
+        logger.error("_get_completed_tasks failed: %s", exc)
         return []
 
 
