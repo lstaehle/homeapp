@@ -264,10 +264,10 @@ async def cmd_cancel(update: Update, context) -> int:
 # Application factory
 # ---------------------------------------------------------------------------
 
-def _build_conversation_handler() -> ConversationHandler:
+def _build_conversation_handler(allowed) -> ConversationHandler:
     cancel = CommandHandler("abbrechen", cmd_cancel)
     return ConversationHandler(
-        entry_points=[CommandHandler("event", cmd_neuesevent)],
+        entry_points=[CommandHandler("event", cmd_neuesevent, filters=allowed)],
         states={
             DATE_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_date_and_title), cancel],
             TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_title), cancel],
@@ -451,14 +451,22 @@ def build_application() -> Application:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     # updater(None): we manage polling ourselves to avoid asyncio conflicts with uvicorn
     app = ApplicationBuilder().token(token).updater(None).build()
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(CommandHandler("ping", cmd_ping))
-    app.add_handler(CommandHandler("note", cmd_note))
-    app.add_handler(CommandHandler("meal", cmd_meal))
-    app.add_handler(CommandHandler("delmeal", cmd_delmeal))
-    app.add_handler(CommandHandler("meals", cmd_meals))
-    app.add_handler(CommandHandler("today", cmd_today))
-    app.add_handler(CommandHandler("week", cmd_week))
-    app.add_handler(_build_conversation_handler())
+
+    # Restrict to known family chat IDs; fall back to open if none are configured
+    _ids = [
+        int(v) for key in ("TELEGRAM_CHAT_ID_1", "TELEGRAM_CHAT_ID_2")
+        if (v := os.environ.get(key, "").strip())
+    ]
+    allowed = filters.Chat(chat_id=_ids) if _ids else filters.ALL
+
+    app.add_handler(CommandHandler("help", cmd_help, filters=allowed))
+    app.add_handler(CommandHandler("ping", cmd_ping, filters=allowed))
+    app.add_handler(CommandHandler("note", cmd_note, filters=allowed))
+    app.add_handler(CommandHandler("meal", cmd_meal, filters=allowed))
+    app.add_handler(CommandHandler("delmeal", cmd_delmeal, filters=allowed))
+    app.add_handler(CommandHandler("meals", cmd_meals, filters=allowed))
+    app.add_handler(CommandHandler("today", cmd_today, filters=allowed))
+    app.add_handler(CommandHandler("week", cmd_week, filters=allowed))
+    app.add_handler(_build_conversation_handler(allowed))
     app.add_error_handler(_error_handler)
     return app
