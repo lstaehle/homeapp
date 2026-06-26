@@ -120,7 +120,7 @@ def create_event(
             "summary": title,
             "description": description,
             "start": {"date": start_dt.date().isoformat()},
-            "end": {"date": start_dt.date().isoformat()},
+            "end": {"date": (start_dt.date() + timedelta(days=1)).isoformat()},
         }
     else:
         body = {

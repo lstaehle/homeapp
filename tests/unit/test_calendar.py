@@ -89,3 +89,31 @@ def test_event_with_missing_location(mock_get_service):
     result = get_events_today()
 
     assert result[0]["location"] == ""
+
+
+@patch("app.gcalendar._get_service")
+def test_create_all_day_event_uses_exclusive_end_date(mock_get_service):
+    service = MagicMock()
+    service.events().insert().execute.return_value = {"id": "event-1"}
+    captured = {}
+
+    def fake_insert(**kwargs):
+        captured.update(kwargs)
+        mock_result = MagicMock()
+        mock_result.execute.return_value = {"id": "event-1"}
+        return mock_result
+
+    service.events().insert = MagicMock(side_effect=fake_insert)
+    mock_get_service.return_value = service
+
+    from app.gcalendar import create_event
+
+    create_event(
+        title="Schulfrei",
+        start_dt=datetime(2026, 7, 1, tzinfo=TZ),
+        end_dt=datetime(2026, 7, 1, tzinfo=TZ),
+        all_day=True,
+    )
+
+    assert captured["body"]["start"]["date"] == "2026-07-01"
+    assert captured["body"]["end"]["date"] == "2026-07-02"

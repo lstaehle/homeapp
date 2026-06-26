@@ -19,6 +19,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 from app.gcalendar import create_event, get_events_range
+from app.llm_events import LLMEventError, ParsedEvent, parse_natural_event
 from app.notes import add_note
 from app.meals import get_plan, set_meal, delete_meal, get_meal_list, add_to_meal_list
 
@@ -26,6 +27,7 @@ TZ = ZoneInfo("Europe/Zurich")
 
 # Conversation states
 DATE_TITLE, TITLE, TIME_STATE, DURATION, DESCRIPTION, CONFIRM = range(6)
+NL_CONFIRM = 6
 
 
 class DurationResult(NamedTuple):
@@ -254,6 +256,86 @@ async def receive_confirm(update: Update, context) -> int:
     return CONFIRM
 
 
+def _format_parsed_event(event: ParsedEvent) -> str:
+    if event.all_day:
+        time_info = "Ganzer Tag"
+    else:
+        time_info = f"{event.start_dt.strftime('%H:%M')} – {event.end_dt.strftime('%H:%M')}"
+    desc_line = f"\nBeschreibung: {event.description}" if event.description else ""
+    return (
+        f"📋 Erkannt:\n"
+        f"Titel: {event.title}\n"
+        f"Datum: {event.start_dt.strftime('%d.%m.%Y')}\n"
+        f"Zeit: {time_info}"
+        f"{desc_line}\n\n"
+        f"Termin speichern? (Ja / Nein)"
+    )
+
+
+async def _start_natural_event(update: Update, context, text: str) -> int:
+    text = text.strip()
+    if not text:
+        await update.message.reply_text(
+            "Bitte beschreibe den Termin, z.B.:\n"
+            "/eventnl Morgen 14:30 Zahnarzt"
+        )
+        return ConversationHandler.END
+
+    try:
+        parsed = parse_natural_event(text)
+    except LLMEventError as exc:
+        await update.message.reply_text(f"❌ {exc}")
+        return ConversationHandler.END
+    except Exception as exc:
+        logger.error("parse_natural_event failed: %s", exc)
+        await update.message.reply_text("❌ Ich konnte den Termin gerade nicht auswerten.")
+        return ConversationHandler.END
+
+    context.user_data["nl_event"] = parsed
+    await update.message.reply_text(_format_parsed_event(parsed))
+    return NL_CONFIRM
+
+
+async def cmd_eventnl(update: Update, context) -> int:
+    return await _start_natural_event(update, context, " ".join(context.args))
+
+
+async def receive_natural_event(update: Update, context) -> int:
+    return await _start_natural_event(update, context, update.message.text)
+
+
+async def receive_natural_confirm(update: Update, context) -> int:
+    answer = update.message.text.strip().lower()
+    if answer == "ja":
+        event: ParsedEvent | None = context.user_data.get("nl_event")
+        if not event:
+            await update.message.reply_text("❌ Kein Termin zwischengespeichert.")
+            return ConversationHandler.END
+        try:
+            create_event(
+                title=event.title,
+                start_dt=event.start_dt,
+                end_dt=event.end_dt,
+                description=event.description,
+                all_day=event.all_day,
+            )
+            await update.message.reply_text("✅ Termin gespeichert!")
+        except Exception as exc:
+            logger.error("create_event from natural language failed: %s", exc)
+            await update.message.reply_text("❌ Fehler beim Speichern des Termins.")
+        finally:
+            context.user_data.pop("nl_event", None)
+        return ConversationHandler.END
+
+    if answer == "nein":
+        context.user_data.pop("nl_event", None)
+        await update.message.reply_text("❌ Abgebrochen.")
+        return ConversationHandler.END
+
+    await update.message.reply_text("Bitte mit Ja oder Nein antworten.")
+    return NL_CONFIRM
+
+
 async def cmd_cancel(update: Update, context) -> int:
     context.user_data.clear()
     await update.message.reply_text("❌ Abgebrochen.")
@@ -279,6 +361,20 @@ def _build_conversation_handler(allowed) -> ConversationHandler:
                 cancel,
             ],
             CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_confirm), cancel],
+        },
+        fallbacks=[cancel],
+    )
+
+
+def _build_natural_event_handler(allowed) -> ConversationHandler:
+    cancel = CommandHandler("abbrechen", cmd_cancel)
+    return ConversationHandler(
+        entry_points=[
+            CommandHandler("eventnl", cmd_eventnl, filters=allowed),
+            MessageHandler(filters.TEXT & ~filters.COMMAND & allowed, receive_natural_event),
+        ],
+        states={
+            NL_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_natural_confirm), cancel],
         },
         fallbacks=[cancel],
     )
@@ -424,6 +520,7 @@ async def cmd_help(update: Update, context) -> None:
         "📋 Verfügbare Befehle:\n\n"
         "📅 *Termine*\n"
         "/event — Neuen Termin erstellen\n"
+        "/eventnl Text — Termin aus natürlicher Sprache erstellen\n"
         "/today — Termine heute\n"
         "/week — Termine nächste 7 Tage\n"
         "/skip — Beschreibung überspringen\n"
@@ -468,5 +565,6 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("today", cmd_today, filters=allowed))
     app.add_handler(CommandHandler("week", cmd_week, filters=allowed))
     app.add_handler(_build_conversation_handler(allowed))
+    app.add_handler(_build_natural_event_handler(allowed))
     app.add_error_handler(_error_handler)
     return app

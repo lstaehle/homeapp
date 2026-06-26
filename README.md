@@ -75,6 +75,9 @@ Alle Werte in `.env` eintragen:
 | `GOOGLE_CALENDAR_ID` | Kalender-ID des Familienkalenders |
 | `TODOIST_API_TOKEN` | Todoist API-Token |
 | `TODOIST_PROJECT_NAME` | `Einkauf` |
+| `OPENAI_API_KEY` | API-Key für natürliche Sprache im Telegram-Bot |
+| `OPENAI_MODEL` | Optionales Modell, z.B. `gpt-4o-mini` |
+| `OPENAI_BASE_URL` | Optionaler OpenAI-kompatibler API-Endpunkt |
 
 ---
 
@@ -124,9 +127,10 @@ Für Kiosk-Modus (Vollbild, kein Browser-Chrome): **Fully Kiosk Browser** (Andro
 
 | Befehl | Funktion |
 |---|---|
-| `/neuesevent` | Neuen Termin im Familienkalender erstellen |
+| `/event` | Neuen Termin im Familienkalender erstellen |
+| `/eventnl <Text>` | Termin aus natürlicher Sprache erstellen |
 | `/abbrechen` | Aktuellen Dialog abbrechen |
-| `/ueberspringen` | Beschreibungsschritt überspringen |
+| `/skip` | Beschreibungsschritt überspringen |
 
 ---
 

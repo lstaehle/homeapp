@@ -1,0 +1,68 @@
+from datetime import datetime
+from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
+
+import pytest
+
+from app.llm_events import LLMEventError, parse_natural_event
+
+TZ = ZoneInfo("Europe/Zurich")
+
+
+@pytest.fixture(autouse=True)
+def env_vars(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
+    monkeypatch.setenv("OPENAI_MODEL", "test-model")
+
+
+def _response(content: str):
+    response = MagicMock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {
+        "choices": [{"message": {"content": content}}],
+    }
+    return response
+
+
+def test_parse_natural_event_defaults_to_one_hour():
+    with patch("app.llm_events.httpx.post", return_value=_response(
+        '{"is_event": true, "title": "Zahnarzt", "date": "2026-06-27", '
+        '"start_time": "14:30", "end_time": null, "all_day": false, "description": ""}'
+    )) as mock_post:
+        event = parse_natural_event(
+            "morgen 14:30 Zahnarzt",
+            now=datetime(2026, 6, 26, 9, 0, tzinfo=TZ),
+        )
+
+    assert event.title == "Zahnarzt"
+    assert event.start_dt.isoformat() == "2026-06-27T14:30:00+02:00"
+    assert event.end_dt.isoformat() == "2026-06-27T15:30:00+02:00"
+    assert event.all_day is False
+    assert mock_post.call_args.kwargs["json"]["model"] == "test-model"
+
+
+def test_parse_natural_event_all_day():
+    with patch("app.llm_events.httpx.post", return_value=_response(
+        '{"is_event": true, "title": "Schulfrei", "date": "2026-07-01", '
+        '"start_time": null, "end_time": null, "all_day": true, "description": ""}'
+    )):
+        event = parse_natural_event("am 1. Juli schulfrei")
+
+    assert event.title == "Schulfrei"
+    assert event.start_dt.isoformat() == "2026-07-01T00:00:00+02:00"
+    assert event.all_day is True
+
+
+def test_parse_natural_event_rejects_non_event():
+    with patch("app.llm_events.httpx.post", return_value=_response(
+        '{"is_event": false, "title": "", "date": null, '
+        '"start_time": null, "end_time": null, "all_day": false, "description": ""}'
+    )):
+        with pytest.raises(LLMEventError, match="Kein Termin"):
+            parse_natural_event("hallo")
+
+
+def test_parse_natural_event_requires_api_key(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    with pytest.raises(LLMEventError, match="OPENAI_API_KEY"):
+        parse_natural_event("morgen Zahnarzt")
