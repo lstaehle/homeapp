@@ -83,12 +83,15 @@ def _payload_to_event(payload: dict) -> ParsedEvent:
         raise LLMEventError("Kein Titel erkannt.")
 
     event_date = _parse_date(payload.get("date"))
+    end_date = _parse_date(payload["end_date"]) if payload.get("end_date") else event_date
+    if end_date < event_date:
+        raise LLMEventError("Enddatum liegt vor dem Startdatum.")
     all_day = bool(payload.get("all_day"))
     description = str(payload.get("description") or "").strip()
 
     if all_day:
         start_dt = datetime.combine(event_date, time.min, tzinfo=TZ)
-        end_dt = start_dt
+        end_dt = datetime.combine(end_date, time.min, tzinfo=TZ)
         return ParsedEvent(title=title, start_dt=start_dt, end_dt=end_dt, description=description, all_day=True)
 
     start_time = _parse_time(payload.get("start_time"))
@@ -100,7 +103,7 @@ def _payload_to_event(payload: dict) -> ParsedEvent:
     if end_time is None:
         end_dt = start_dt + timedelta(hours=1)
     else:
-        end_dt = datetime.combine(event_date, end_time, tzinfo=TZ)
+        end_dt = datetime.combine(end_date, end_time, tzinfo=TZ)
         if end_dt <= start_dt:
             end_dt += timedelta(days=1)
 
@@ -119,10 +122,12 @@ def parse_natural_event(text: str, now: datetime | None = None) -> ParsedEvent:
     system = (
         "Du extrahierst Kalendereinträge aus deutschen Telegram-Nachrichten. "
         "Antworte ausschließlich als JSON-Objekt mit diesen Feldern: "
-        "is_event boolean, title string, date YYYY-MM-DD oder null, "
+        "is_event boolean, title string, date YYYY-MM-DD oder null, end_date YYYY-MM-DD oder null, "
         "start_time HH:MM oder null, end_time HH:MM oder null, "
         "all_day boolean, description string. "
         "Wenn kein klarer Terminwunsch erkennbar ist, setze is_event auf false. "
+        "Setze end_date nur, wenn die Nachricht ausdrücklich einen mehrtägigen Termin nennt. "
+        "Bei mehrtägigen ganztägigen Terminen ist end_date das letzte inklusive Datum. "
         "Bei Terminen mit Startzeit aber ohne Dauer/Ende lasse end_time null. "
         "Nutze Europe/Zurich und das Referenzdatum für relative Angaben."
     )

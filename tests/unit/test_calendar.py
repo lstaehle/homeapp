@@ -117,3 +117,30 @@ def test_create_all_day_event_uses_exclusive_end_date(mock_get_service):
 
     assert captured["body"]["start"]["date"] == "2026-07-01"
     assert captured["body"]["end"]["date"] == "2026-07-02"
+
+
+@patch("app.gcalendar._get_service")
+def test_create_multi_day_all_day_event_uses_exclusive_end_date(mock_get_service):
+    service = MagicMock()
+    captured = {}
+
+    def fake_insert(**kwargs):
+        captured.update(kwargs)
+        mock_result = MagicMock()
+        mock_result.execute.return_value = {"id": "event-1"}
+        return mock_result
+
+    service.events().insert = MagicMock(side_effect=fake_insert)
+    mock_get_service.return_value = service
+
+    from app.gcalendar import create_event
+
+    create_event(
+        title="Kurzurlaub",
+        start_dt=datetime(2026, 7, 10, tzinfo=TZ),
+        end_dt=datetime(2026, 7, 12, tzinfo=TZ),
+        all_day=True,
+    )
+
+    assert captured["body"]["start"]["date"] == "2026-07-10"
+    assert captured["body"]["end"]["date"] == "2026-07-13"

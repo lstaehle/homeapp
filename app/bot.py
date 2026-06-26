@@ -257,6 +257,10 @@ async def receive_confirm(update: Update, context) -> int:
 
 
 def _format_parsed_event(event: ParsedEvent) -> str:
+    if event.end_dt.date() > event.start_dt.date():
+        date_info = f"{event.start_dt.strftime('%d.%m.%Y')} – {event.end_dt.strftime('%d.%m.%Y')}"
+    else:
+        date_info = event.start_dt.strftime('%d.%m.%Y')
     if event.all_day:
         time_info = "Ganzer Tag"
     else:
@@ -265,7 +269,7 @@ def _format_parsed_event(event: ParsedEvent) -> str:
     return (
         f"📋 Erkannt:\n"
         f"Titel: {event.title}\n"
-        f"Datum: {event.start_dt.strftime('%d.%m.%Y')}\n"
+        f"Datum: {date_info}\n"
         f"Zeit: {time_info}"
         f"{desc_line}\n\n"
         f"Termin speichern? (Ja / Nein)"

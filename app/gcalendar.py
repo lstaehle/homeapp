@@ -116,11 +116,12 @@ def create_event(
 ) -> dict:
     service = _get_service()
     if all_day:
+        end_date = max(end_dt.date(), start_dt.date()) + timedelta(days=1)
         body = {
             "summary": title,
             "description": description,
             "start": {"date": start_dt.date().isoformat()},
-            "end": {"date": (start_dt.date() + timedelta(days=1)).isoformat()},
+            "end": {"date": end_date.isoformat()},
         }
     else:
         body = {

@@ -28,7 +28,8 @@ def _response(content: str):
 def test_parse_natural_event_defaults_to_one_hour():
     with patch("app.llm_events.httpx.post", return_value=_response(
         '{"is_event": true, "title": "Zahnarzt", "date": "2026-06-27", '
-        '"start_time": "14:30", "end_time": null, "all_day": false, "description": ""}'
+        '"end_date": null, "start_time": "14:30", "end_time": null, '
+        '"all_day": false, "description": ""}'
     )) as mock_post:
         event = parse_natural_event(
             "morgen 14:30 Zahnarzt",
@@ -45,13 +46,41 @@ def test_parse_natural_event_defaults_to_one_hour():
 def test_parse_natural_event_all_day():
     with patch("app.llm_events.httpx.post", return_value=_response(
         '{"is_event": true, "title": "Schulfrei", "date": "2026-07-01", '
-        '"start_time": null, "end_time": null, "all_day": true, "description": ""}'
+        '"end_date": null, "start_time": null, "end_time": null, "all_day": true, "description": ""}'
     )):
         event = parse_natural_event("am 1. Juli schulfrei")
 
     assert event.title == "Schulfrei"
     assert event.start_dt.isoformat() == "2026-07-01T00:00:00+02:00"
     assert event.all_day is True
+
+
+def test_parse_natural_event_multi_day_all_day():
+    with patch("app.llm_events.httpx.post", return_value=_response(
+        '{"is_event": true, "title": "Kurzurlaub", "date": "2026-07-10", '
+        '"end_date": "2026-07-12", "start_time": null, "end_time": null, '
+        '"all_day": true, "description": ""}'
+    )):
+        event = parse_natural_event("Kurzurlaub vom 10. bis 12. Juli")
+
+    assert event.title == "Kurzurlaub"
+    assert event.start_dt.isoformat() == "2026-07-10T00:00:00+02:00"
+    assert event.end_dt.isoformat() == "2026-07-12T00:00:00+02:00"
+    assert event.all_day is True
+
+
+def test_parse_natural_event_multi_day_timed():
+    with patch("app.llm_events.httpx.post", return_value=_response(
+        '{"is_event": true, "title": "Konferenz", "date": "2026-09-01", '
+        '"end_date": "2026-09-03", "start_time": "10:00", "end_time": "16:00", '
+        '"all_day": false, "description": ""}'
+    )):
+        event = parse_natural_event("Konferenz von 1. September 10 Uhr bis 3. September 16 Uhr")
+
+    assert event.title == "Konferenz"
+    assert event.start_dt.isoformat() == "2026-09-01T10:00:00+02:00"
+    assert event.end_dt.isoformat() == "2026-09-03T16:00:00+02:00"
+    assert event.all_day is False
 
 
 def test_parse_natural_event_rejects_non_event():
