@@ -45,6 +45,35 @@ def _extract_json(content: str) -> dict:
         raise LLMEventError("Die LLM-Antwort war kein gültiges JSON.") from exc
 
 
+def _error_detail(response: httpx.Response) -> str:
+    try:
+        data = response.json()
+    except ValueError:
+        return response.text[:300]
+    if isinstance(data, dict):
+        error = data.get("error")
+        if isinstance(error, dict):
+            return str(error.get("message") or error.get("code") or "")[:300]
+        if isinstance(error, str):
+            return error[:300]
+    return str(data)[:300]
+
+
+def _raise_llm_error_for_status(response: httpx.Response) -> None:
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        detail = _error_detail(exc.response)
+        if status == 401:
+            raise LLMEventError("OpenAI API-Key wurde abgelehnt. Bitte OPENAI_API_KEY prüfen.") from exc
+        if status == 429:
+            raise LLMEventError("OpenAI Anfrage-Limit oder Guthaben erreicht. Bitte Billing/Quota prüfen.") from exc
+        if status == 400:
+            raise LLMEventError(f"OpenAI Anfrage ungültig: {detail}") from exc
+        raise LLMEventError(f"OpenAI Fehler {status}: {detail}") from exc
+
+
 def _payload_to_event(payload: dict) -> ParsedEvent:
     if not payload.get("is_event"):
         raise LLMEventError("Kein Termin erkannt.")
@@ -103,20 +132,27 @@ def parse_natural_event(text: str, now: datetime | None = None) -> ParsedEvent:
         f"Nachricht: {text}"
     )
 
-    response = httpx.post(
-        f"{base_url}/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "temperature": 0,
-            "response_format": {"type": "json_object"},
-        },
-        timeout=20,
-    )
-    response.raise_for_status()
-    content = response.json()["choices"][0]["message"]["content"]
+    try:
+        response = httpx.post(
+            f"{base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "temperature": 0,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=20,
+        )
+    except httpx.RequestError as exc:
+        raise LLMEventError(f"OpenAI nicht erreichbar: {exc}") from exc
+
+    _raise_llm_error_for_status(response)
+    try:
+        content = response.json()["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise LLMEventError("Unerwartete Antwort von OpenAI.") from exc
     return _payload_to_event(_extract_json(content))

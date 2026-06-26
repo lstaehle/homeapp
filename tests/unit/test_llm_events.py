@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
+import httpx
 
 from app.llm_events import LLMEventError, parse_natural_event
 
@@ -66,3 +67,31 @@ def test_parse_natural_event_requires_api_key(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "")
     with pytest.raises(LLMEventError, match="OPENAI_API_KEY"):
         parse_natural_event("morgen Zahnarzt")
+
+
+def test_parse_natural_event_reports_bad_api_key():
+    response = httpx.Response(
+        401,
+        json={"error": {"message": "Incorrect API key provided"}},
+        request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"),
+    )
+    with patch("app.llm_events.httpx.post", return_value=response):
+        with pytest.raises(LLMEventError, match="API-Key"):
+            parse_natural_event("morgen Zahnarzt")
+
+
+def test_parse_natural_event_reports_quota_error():
+    response = httpx.Response(
+        429,
+        json={"error": {"message": "You exceeded your current quota"}},
+        request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"),
+    )
+    with patch("app.llm_events.httpx.post", return_value=response):
+        with pytest.raises(LLMEventError, match="Guthaben"):
+            parse_natural_event("morgen Zahnarzt")
+
+
+def test_parse_natural_event_reports_network_error():
+    with patch("app.llm_events.httpx.post", side_effect=httpx.ConnectError("dns failed")):
+        with pytest.raises(LLMEventError, match="nicht erreichbar"):
+            parse_natural_event("morgen Zahnarzt")
