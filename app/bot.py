@@ -35,6 +35,95 @@ class DurationResult(NamedTuple):
     all_day: bool
 
 
+def _chat_id_from_env(key: str) -> int | None:
+    value = os.environ.get(key, "").strip()
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        logger.warning("Invalid Telegram chat ID in %s", key)
+        return None
+
+
+def _notification_target_chat_id(creator_chat_id: int | None) -> int | None:
+    if creator_chat_id is None:
+        return None
+    chat_1 = _chat_id_from_env("TELEGRAM_CHAT_ID_1")
+    chat_2 = _chat_id_from_env("TELEGRAM_CHAT_ID_2")
+    if creator_chat_id == chat_1:
+        return chat_2
+    if creator_chat_id == chat_2:
+        return chat_1
+    return None
+
+
+def _sender_name(update: Update) -> str:
+    user = getattr(update, "effective_user", None)
+    name = getattr(user, "first_name", None)
+    return name or "jemand"
+
+
+def _format_event_when(start_dt: datetime, end_dt: datetime, all_day: bool) -> str:
+    if all_day:
+        if end_dt.date() > start_dt.date():
+            return f"{start_dt.strftime('%d.%m.%Y')}-{end_dt.strftime('%d.%m.%Y')}, ganztägig"
+        return f"{start_dt.strftime('%d.%m.%Y')}, ganztägig"
+    if end_dt.date() > start_dt.date():
+        return (
+            f"{start_dt.strftime('%d.%m.%Y %H:%M')}-"
+            f"{end_dt.strftime('%d.%m.%Y %H:%M')}"
+        )
+    return f"{start_dt.strftime('%d.%m.%Y')}, {start_dt.strftime('%H:%M')}-{end_dt.strftime('%H:%M')}"
+
+
+def _format_event_notification(
+    title: str,
+    start_dt: datetime,
+    end_dt: datetime,
+    all_day: bool,
+    creator_name: str,
+) -> str:
+    return (
+        f"📅 Neuer Termin von {creator_name}\n"
+        f"{title}\n"
+        f"{_format_event_when(start_dt, end_dt, all_day)}"
+    )
+
+
+async def _notify_other_about_event(
+    update: Update,
+    context,
+    title: str,
+    start_dt: datetime,
+    end_dt: datetime,
+    all_day: bool = False,
+) -> None:
+    chat = getattr(update, "effective_chat", None)
+    target_chat_id = _notification_target_chat_id(getattr(chat, "id", None))
+    if target_chat_id is None:
+        return
+
+    bot = getattr(context, "bot", None)
+    if bot is None:
+        logger.info("Skipping event notification because context.bot is unavailable")
+        return
+
+    try:
+        await bot.send_message(
+            chat_id=target_chat_id,
+            text=_format_event_notification(
+                title=title,
+                start_dt=start_dt,
+                end_dt=end_dt,
+                all_day=all_day,
+                creator_name=_sender_name(update),
+            ),
+        )
+    except Exception as exc:
+        logger.error("Failed to send event notification: %s", exc)
+
+
 # ---------------------------------------------------------------------------
 # Pure parse helpers — no Telegram dependency, fully unit-testable
 # ---------------------------------------------------------------------------
@@ -131,6 +220,7 @@ async def cmd_neuesevent(update: Update, context) -> int:
             f"📅 {event_date.strftime('%d.%m.%Y')} um {event_time.strftime('%H:%M')}\n"
             f"📌 {title}"
         )
+        await _notify_other_about_event(update, context, title, start_dt, end_dt)
     except Exception as exc:
         logger.error("create_event failed: %s", exc)
         await update.message.reply_text("❌ Fehler beim Speichern des Termins.")
@@ -244,6 +334,14 @@ async def receive_confirm(update: Update, context) -> int:
             all_day=duration.all_day,
         )
         await update.message.reply_text("✅ Termin gespeichert!")
+        await _notify_other_about_event(
+            update,
+            context,
+            d["title"],
+            start_dt,
+            end_dt,
+            all_day=duration.all_day,
+        )
         context.user_data.clear()
         return ConversationHandler.END
 
@@ -324,6 +422,14 @@ async def receive_natural_confirm(update: Update, context) -> int:
                 all_day=event.all_day,
             )
             await update.message.reply_text("✅ Termin gespeichert!")
+            await _notify_other_about_event(
+                update,
+                context,
+                event.title,
+                event.start_dt,
+                event.end_dt,
+                all_day=event.all_day,
+            )
         except Exception as exc:
             logger.error("create_event from natural language failed: %s", exc)
             await update.message.reply_text("❌ Fehler beim Speichern des Termins.")

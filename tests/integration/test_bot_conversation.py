@@ -1,47 +1,60 @@
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from app.bot import (
     CONFIRM,
-    DATE,
+    DATE_TITLE,
     DESCRIPTION,
     DURATION,
     TIME_STATE,
-    TITLE,
     cmd_cancel,
     cmd_neuesevent,
     cmd_skip_description,
     receive_confirm,
-    receive_date,
+    receive_date_and_title,
     receive_duration,
+    receive_natural_confirm,
     receive_time,
-    receive_title,
 )
+from app.llm_events import ParsedEvent
 from telegram.ext import ConversationHandler
 
+TZ = ZoneInfo("Europe/Zurich")
 
-def _update(text: str):
+
+def _update(text: str, chat_id: int = 111, first_name: str = "Lorenz"):
     u = MagicMock()
     u.message.text = text
     u.message.reply_text = AsyncMock()
+    u.effective_chat.id = chat_id
+    u.effective_user.first_name = first_name
     return u
 
 
-def _context(user_data=None):
+def _context(user_data=None, args=None):
     ctx = MagicMock()
     ctx.user_data = user_data if user_data is not None else {}
+    ctx.args = args if args is not None else []
+    ctx.bot.send_message = AsyncMock()
     return ctx
+
+
+@pytest.fixture
+def chat_ids(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_CHAT_ID_1", "111")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID_2", "222")
 
 
 async def test_neuesevent_happy_path():
     ctx = _context()
 
-    assert await cmd_neuesevent(_update(""), ctx) == TITLE
-    assert await receive_title(_update("Kindergeburtstag"), ctx) == DATE
+    assert await cmd_neuesevent(_update(""), ctx) == DATE_TITLE
+    assert await receive_date_and_title(_update("25.12.2026 Kindergeburtstag"), ctx) == TIME_STATE
     assert ctx.user_data["title"] == "Kindergeburtstag"
-    assert await receive_date(_update("25.12.2026"), ctx) == TIME_STATE
+    assert ctx.user_data["date"] == date(2026, 12, 25)
     assert await receive_time(_update("14:00"), ctx) == DURATION
     assert await receive_duration(_update("2h"), ctx) == DESCRIPTION
 
@@ -55,12 +68,97 @@ async def test_neuesevent_happy_path():
     assert mock_create.call_args.kwargs["title"] == "Kindergeburtstag"
 
 
+async def test_inline_event_notifies_other_chat(chat_ids):
+    ctx = _context(args=["25.12.2026", "14:00", "Kindergeburtstag"])
+    update = _update("/event 25.12.2026 14:00 Kindergeburtstag", chat_id=111, first_name="Lorenz")
+
+    with patch("app.bot.create_event") as mock_create:
+        result = await cmd_neuesevent(update, ctx)
+
+    assert result == ConversationHandler.END
+    mock_create.assert_called_once()
+    ctx.bot.send_message.assert_awaited_once()
+    kwargs = ctx.bot.send_message.await_args.kwargs
+    assert kwargs["chat_id"] == 222
+    assert "Neuer Termin von Lorenz" in kwargs["text"]
+    assert "Kindergeburtstag" in kwargs["text"]
+    assert "25.12.2026, 14:00-15:00" in kwargs["text"]
+
+
+async def test_guided_event_notifies_other_chat_after_confirmation(chat_ids):
+    ctx = _context()
+    await receive_date_and_title(_update("25.12.2026 Kindergeburtstag"), ctx)
+    await receive_time(_update("14:00"), ctx)
+    await receive_duration(_update("2h"), ctx)
+    await cmd_skip_description(_update(""), ctx)
+
+    with patch("app.bot.create_event"):
+        result = await receive_confirm(_update("Ja", chat_id=111, first_name="Lorenz"), ctx)
+
+    assert result == ConversationHandler.END
+    kwargs = ctx.bot.send_message.await_args.kwargs
+    assert kwargs["chat_id"] == 222
+    assert "Kindergeburtstag" in kwargs["text"]
+    assert "25.12.2026, 14:00-16:00" in kwargs["text"]
+
+
+async def test_natural_event_notifies_reverse_direction(chat_ids):
+    event = ParsedEvent(
+        title="Zahnarzt",
+        start_dt=datetime(2026, 6, 27, 14, 30, tzinfo=TZ),
+        end_dt=datetime(2026, 6, 27, 15, 30, tzinfo=TZ),
+    )
+    ctx = _context(user_data={"nl_event": event})
+
+    with patch("app.bot.create_event"):
+        result = await receive_natural_confirm(_update("Ja", chat_id=222, first_name="Anna"), ctx)
+
+    assert result == ConversationHandler.END
+    kwargs = ctx.bot.send_message.await_args.kwargs
+    assert kwargs["chat_id"] == 111
+    assert "Neuer Termin von Anna" in kwargs["text"]
+    assert "Zahnarzt" in kwargs["text"]
+
+
+async def test_natural_all_day_event_formats_as_all_day(chat_ids):
+    event = ParsedEvent(
+        title="Schulfrei",
+        start_dt=datetime(2026, 7, 1, 0, 0, tzinfo=TZ),
+        end_dt=datetime(2026, 7, 1, 0, 0, tzinfo=TZ),
+        all_day=True,
+    )
+    ctx = _context(user_data={"nl_event": event})
+
+    with patch("app.bot.create_event"):
+        await receive_natural_confirm(_update("Ja", chat_id=111), ctx)
+
+    assert "01.07.2026, ganztägig" in ctx.bot.send_message.await_args.kwargs["text"]
+
+
+async def test_no_notification_when_create_event_fails(chat_ids):
+    ctx = _context(args=["25.12.2026", "14:00", "Kindergeburtstag"])
+
+    with patch("app.bot.create_event", side_effect=Exception("calendar down")):
+        result = await cmd_neuesevent(_update("/event", chat_id=111), ctx)
+
+    assert result == ConversationHandler.END
+    ctx.bot.send_message.assert_not_awaited()
+
+
+async def test_unknown_chat_id_does_not_notify(chat_ids):
+    ctx = _context(args=["25.12.2026", "14:00", "Kindergeburtstag"])
+
+    with patch("app.bot.create_event"):
+        await cmd_neuesevent(_update("/event", chat_id=999), ctx)
+
+    ctx.bot.send_message.assert_not_awaited()
+
+
 async def test_neuesevent_cancel_mid_flow():
     ctx = _context()
 
     await cmd_neuesevent(_update(""), ctx)
-    await receive_title(_update("Test"), ctx)
-    await receive_date(_update("01.01.2027"), ctx)
+    await receive_date_and_title(_update("01.01.2027 Test"), ctx)
 
     with patch("app.bot.create_event") as mock_create:
         cancel_update = _update("/abbrechen")
@@ -76,24 +174,19 @@ async def test_neuesevent_invalid_date_retry():
     ctx = _context()
 
     await cmd_neuesevent(_update(""), ctx)
-    await receive_title(_update("Test Event"), ctx)
 
-    # Invalid date — stays in DATE state
     invalid = _update("not-a-date")
-    assert await receive_date(invalid, ctx) == DATE
+    assert await receive_date_and_title(invalid, ctx) == DATE_TITLE
     invalid.message.reply_text.assert_called()
 
-    # Valid date — advances
-    assert await receive_date(_update("15.03.2027"), ctx) == TIME_STATE
+    assert await receive_date_and_title(_update("15.03.2027 Test Event"), ctx) == TIME_STATE
     assert ctx.user_data["date"] == date(2027, 3, 15)
 
 
 async def test_neuesevent_nein_confirmation():
     ctx = _context()
 
-    await cmd_neuesevent(_update(""), ctx)
-    await receive_title(_update("Test"), ctx)
-    await receive_date(_update("01.06.2027"), ctx)
+    await receive_date_and_title(_update("01.06.2027 Test"), ctx)
     await receive_time(_update("10:00"), ctx)
     await receive_duration(_update("1h"), ctx)
 
@@ -106,3 +199,4 @@ async def test_neuesevent_nein_confirmation():
     mock_create.assert_not_called()
     reply = nein_update.message.reply_text.call_args[0][0]
     assert "Abgebrochen" in reply
+    ctx.bot.send_message.assert_not_awaited()
