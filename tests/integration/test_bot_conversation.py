@@ -12,6 +12,9 @@ from app.bot import (
     TIME_STATE,
     cmd_cancel,
     cmd_neuesevent,
+    cmd_period,
+    cmd_periodhistory,
+    cmd_periodnext,
     cmd_skip_description,
     receive_confirm,
     receive_date_and_title,
@@ -19,6 +22,7 @@ from app.bot import (
     receive_natural_confirm,
     receive_time,
 )
+from app.cycle import CycleError
 from app.llm_events import ParsedEvent
 from telegram.ext import ConversationHandler
 
@@ -200,3 +204,92 @@ async def test_neuesevent_nein_confirmation():
     reply = nein_update.message.reply_text.call_args[0][0]
     assert "Abgebrochen" in reply
     ctx.bot.send_message.assert_not_awaited()
+
+
+async def test_period_defaults_to_today(monkeypatch):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 8, 15, tzinfo=tz)
+
+    monkeypatch.setattr("app.bot.datetime", FixedDateTime)
+    ctx = _context(args=[])
+    update = _update("/period")
+
+    with patch("app.bot.record_cycle_start") as mock_record:
+        await cmd_period(update, ctx)
+
+    mock_record.assert_called_once_with(date(2026, 8, 15))
+    assert "15.08.2026" in update.message.reply_text.await_args.args[0]
+
+
+async def test_period_replies_after_saving_date():
+    ctx = _context(args=["15.08.2026"])
+    update = _update("/period 15.08.2026")
+
+    with patch("app.bot.record_cycle_start"):
+        await cmd_period(update, ctx)
+
+    update.message.reply_text.assert_awaited_once()
+    assert "Zyklusstart gespeichert" in update.message.reply_text.await_args.args[0]
+    assert "15.08.2026" in update.message.reply_text.await_args.args[0]
+
+
+async def test_period_invalid_date_does_not_save():
+    ctx = _context(args=["invalid"])
+    update = _update("/period invalid")
+
+    with patch("app.bot.record_cycle_start") as mock_record:
+        await cmd_period(update, ctx)
+
+    mock_record.assert_not_called()
+    assert "Ungültiges Datum" in update.message.reply_text.await_args.args[0]
+
+
+async def test_period_missing_cycle_calendar_id_reports_error():
+    ctx = _context(args=["15.08.2026"])
+    update = _update("/period 15.08.2026")
+
+    with patch("app.bot.record_cycle_start", side_effect=CycleError("CYCLE_GOOGLE_CALENDAR_ID ist nicht konfiguriert.")):
+        await cmd_period(update, ctx)
+
+    assert "CYCLE_GOOGLE_CALENDAR_ID" in update.message.reply_text.await_args.args[0]
+
+
+async def test_periodhistory_shows_recent_starts_and_average():
+    ctx = _context()
+    update = _update("/periodhistory")
+
+    with patch("app.bot.get_cycle_starts", return_value=[
+        date(2026, 6, 1),
+        date(2026, 6, 29),
+        date(2026, 7, 28),
+    ]):
+        await cmd_periodhistory(update, ctx)
+
+    text = update.message.reply_text.await_args.args[0]
+    assert "Zyklushistorie" in text
+    assert "01.06.2026" in text
+    assert "29 Tage" in text
+    assert "Durchschnitt: 29 Tage" in text
+
+
+async def test_periodnext_creates_prediction():
+    ctx = _context()
+    update = _update("/periodnext")
+    prediction = MagicMock()
+    prediction.next_start = date(2026, 8, 25)
+    prediction.interval_days = 29
+    prediction.based_on_cycles = 3
+
+    with (
+        patch("app.bot.predict_next_cycle", return_value=prediction),
+        patch("app.bot.replace_predicted_cycle_event") as mock_replace,
+    ):
+        await cmd_periodnext(update, ctx)
+
+    mock_replace.assert_called_once_with(date(2026, 8, 25))
+    text = update.message.reply_text.await_args.args[0]
+    assert "25.08.2026" in text
+    assert "Intervall: 29 Tage" in text
+    assert "gespeichert" in text

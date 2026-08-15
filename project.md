@@ -27,6 +27,9 @@ A family coordination app for two adults and two kids (ages 7 and 5), self-hoste
 | `/abbrechen` | Cancel event creation at any step |
 | `/note <text>` | Save a note visible on the dashboard |
 | `/ping` | Liveness check |
+| `/period [TT.MM]` | Save cycle start in the separate cycle calendar |
+| `/periodhistory` | Show recorded cycle starts and intervals |
+| `/periodnext` | Predict next cycle start and save expected event |
 
 ### Scheduled reminders (Europe/Zurich)
 - **06:00 daily** — today's events sent to both Telegram chat IDs
@@ -75,6 +78,7 @@ TELEGRAM_CHAT_ID_2
 GOOGLE_CREDENTIALS_FILE   # path to credentials.json
 GOOGLE_TOKEN_FILE         # path to token.json (writable)
 GOOGLE_CALENDAR_ID        # staehlefamily89@gmail.com
+CYCLE_GOOGLE_CALENDAR_ID  # separate Google Calendar for cycle tracking
 TODOIST_API_TOKEN
 TODOIST_PROJECT_NAME      # e.g. Groceries
 WEATHER_LAT               # e.g. 46.70306

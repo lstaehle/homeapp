@@ -73,6 +73,7 @@ Alle Werte in `.env` eintragen:
 | `GOOGLE_CREDENTIALS_FILE` | `credentials.json` |
 | `GOOGLE_TOKEN_FILE` | `token.json` |
 | `GOOGLE_CALENDAR_ID` | Kalender-ID des Familienkalenders |
+| `CYCLE_GOOGLE_CALENDAR_ID` | Kalender-ID eines separaten Zyklus-Kalenders |
 | `TODOIST_API_TOKEN` | Todoist API-Token |
 | `TODOIST_PROJECT_NAME` | `Einkauf` |
 | `OPENAI_API_KEY` | API-Key für natürliche Sprache im Telegram-Bot |
@@ -131,6 +132,9 @@ Für Kiosk-Modus (Vollbild, kein Browser-Chrome): **Fully Kiosk Browser** (Andro
 | `/eventnl <Text>` | Termin aus natürlicher Sprache erstellen |
 | `/abbrechen` | Aktuellen Dialog abbrechen |
 | `/skip` | Beschreibungsschritt überspringen |
+| `/period [TT.MM]` | Zyklusstart im separaten Zyklus-Kalender speichern |
+| `/periodhistory` | Zyklushistorie anzeigen |
+| `/periodnext` | Nächsten Zyklusstart berechnen und als erwarteten Termin speichern |
 
 ---
 

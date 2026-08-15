@@ -19,6 +19,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 from app.gcalendar import create_event, get_events_range
+from app.cycle import (
+    CycleError,
+    cycle_intervals,
+    get_cycle_starts,
+    predict_next_cycle,
+    record_cycle_start,
+    replace_predicted_cycle_event,
+)
 from app.llm_events import LLMEventError, ParsedEvent, parse_natural_event
 from app.notes import add_note
 from app.meals import get_plan, set_meal, delete_meal, get_meal_list, add_to_meal_list
@@ -557,6 +565,92 @@ async def cmd_meals(update: Update, context) -> None:
     await update.message.reply_text("\n".join(lines))
 
 
+async def cmd_period(update: Update, context) -> None:
+    """/period [TT.MM|TT.MM.JJJJ] — save cycle start, defaulting to today."""
+    args = context.args
+    if len(args) > 1:
+        await update.message.reply_text("Verwendung: /period oder /period TT.MM")
+        return
+
+    if args:
+        try:
+            day = parse_date(args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Ungültiges Datum. Format: TT.MM oder TT.MM.JJJJ")
+            return
+    else:
+        day = datetime.now(TZ).date()
+
+    try:
+        record_cycle_start(day)
+    except CycleError as exc:
+        await update.message.reply_text(f"❌ {exc}")
+        return
+    except Exception as exc:
+        logger.error("record_cycle_start failed: %s", exc)
+        await update.message.reply_text("❌ Fehler beim Speichern des Zyklusstarts.")
+        return
+
+    await update.message.reply_text(f"✅ Zyklusstart gespeichert: {day.strftime('%d.%m.%Y')}")
+
+
+async def cmd_periodhistory(update: Update, context) -> None:
+    """/periodhistory — show recent cycle starts and intervals."""
+    try:
+        starts = get_cycle_starts()
+    except CycleError as exc:
+        await update.message.reply_text(f"❌ {exc}")
+        return
+    except Exception as exc:
+        logger.error("get_cycle_starts failed: %s", exc)
+        await update.message.reply_text("❌ Fehler beim Laden der Zyklushistorie.")
+        return
+
+    if not starts:
+        await update.message.reply_text("Noch kein Zyklusstart gespeichert.")
+        return
+
+    intervals = cycle_intervals(starts)
+    recent_starts = starts[-6:]
+    lines = ["📅 Zyklushistorie:"]
+    for idx, day in enumerate(recent_starts):
+        suffix = ""
+        global_index = len(starts) - len(recent_starts) + idx
+        if global_index > 0:
+            suffix = f" ({(starts[global_index] - starts[global_index - 1]).days} Tage)"
+        lines.append(f"• {day.strftime('%d.%m.%Y')}{suffix}")
+    if intervals:
+        avg = int(sum(intervals) / len(intervals) + 0.5)
+        lines.append(f"\nDurchschnitt: {avg} Tage")
+
+    await update.message.reply_text("\n".join(lines))
+
+
+async def cmd_periodnext(update: Update, context) -> None:
+    """/periodnext — predict and store next expected cycle start."""
+    try:
+        prediction = predict_next_cycle()
+        replace_predicted_cycle_event(prediction.next_start)
+    except CycleError as exc:
+        await update.message.reply_text(f"❌ {exc}")
+        return
+    except Exception as exc:
+        logger.error("period prediction failed: %s", exc)
+        await update.message.reply_text("❌ Fehler beim Berechnen des nächsten Zyklusstarts.")
+        return
+
+    basis = (
+        f"basierend auf {prediction.based_on_cycles} Zyklen"
+        if prediction.based_on_cycles
+        else "mit 28-Tage-Standardwert"
+    )
+    await update.message.reply_text(
+        f"📅 Erwarteter nächster Zyklusstart: {prediction.next_start.strftime('%d.%m.%Y')}\n"
+        f"Intervall: {prediction.interval_days} Tage ({basis})\n"
+        "Der erwartete Termin wurde im Zykluskalender gespeichert."
+    )
+
+
 async def cmd_today(update: Update, context) -> None:
     """/today — show all events for today."""
     today = datetime.now(TZ).date()
@@ -642,6 +736,11 @@ async def cmd_help(update: Update, context) -> None:
         "/meals — Menüplan diese Woche\n\n"
         "📌 *Notizen*\n"
         "/note Text — Notiz speichern\n\n"
+        "🌙 *Zyklus*\n"
+        "/period — Zyklusstart heute speichern\n"
+        "/period TT.MM — Zyklusstart für Datum speichern\n"
+        "/periodhistory — Zyklushistorie anzeigen\n"
+        "/periodnext — Nächsten Zyklusstart berechnen\n\n"
         "🔧 *Sonstiges*\n"
         "/ping — Bot testen\n"
         "/help — Diese Hilfe anzeigen",
@@ -672,6 +771,9 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("meal", cmd_meal, filters=allowed))
     app.add_handler(CommandHandler("delmeal", cmd_delmeal, filters=allowed))
     app.add_handler(CommandHandler("meals", cmd_meals, filters=allowed))
+    app.add_handler(CommandHandler("period", cmd_period, filters=allowed))
+    app.add_handler(CommandHandler("periodhistory", cmd_periodhistory, filters=allowed))
+    app.add_handler(CommandHandler("periodnext", cmd_periodnext, filters=allowed))
     app.add_handler(CommandHandler("today", cmd_today, filters=allowed))
     app.add_handler(CommandHandler("week", cmd_week, filters=allowed))
     app.add_handler(_build_conversation_handler(allowed))

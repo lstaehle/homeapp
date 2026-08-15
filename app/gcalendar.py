@@ -43,10 +43,12 @@ def _parse_event(event: dict) -> dict:
     start = event["start"].get("dateTime", event["start"].get("date", ""))
     end = event["end"].get("dateTime", event["end"].get("date", ""))
     return {
+        "id": event.get("id", ""),
         "title": event.get("summary", "(Kein Titel)"),
         "start": start,
         "end": end,
         "location": event.get("location", ""),
+        "status": event.get("status", ""),
     }
 
 
@@ -91,12 +93,12 @@ def get_events_this_week() -> list[dict]:
     return [_parse_event(e) for e in result.get("items", [])]
 
 
-def get_events_range(start_dt: datetime, end_dt: datetime) -> list[dict]:
+def get_events_range(start_dt: datetime, end_dt: datetime, calendar_id: str | None = None) -> list[dict]:
     service = _get_service()
     result = (
         service.events()
         .list(
-            calendarId=_calendar_id(),
+            calendarId=calendar_id or _calendar_id(),
             timeMin=start_dt.isoformat(),
             timeMax=end_dt.isoformat(),
             singleEvents=True,
@@ -113,6 +115,7 @@ def create_event(
     end_dt: datetime,
     description: str = "",
     all_day: bool = False,
+    calendar_id: str | None = None,
 ) -> dict:
     service = _get_service()
     if all_day:
@@ -130,7 +133,12 @@ def create_event(
             "start": {"dateTime": start_dt.isoformat(), "timeZone": "Europe/Zurich"},
             "end": {"dateTime": end_dt.isoformat(), "timeZone": "Europe/Zurich"},
         }
-    return service.events().insert(calendarId=_calendar_id(), body=body).execute()
+    return service.events().insert(calendarId=calendar_id or _calendar_id(), body=body).execute()
+
+
+def delete_event(event_id: str, calendar_id: str | None = None) -> None:
+    service = _get_service()
+    service.events().delete(calendarId=calendar_id or _calendar_id(), eventId=event_id).execute()
 
 
 def smoke_test():

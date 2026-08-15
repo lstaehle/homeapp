@@ -144,3 +144,76 @@ def test_create_multi_day_all_day_event_uses_exclusive_end_date(mock_get_service
 
     assert captured["body"]["start"]["date"] == "2026-07-10"
     assert captured["body"]["end"]["date"] == "2026-07-13"
+
+
+@patch("app.gcalendar._get_service")
+def test_get_events_range_uses_explicit_calendar_id(mock_get_service):
+    service = MagicMock()
+    captured = {}
+
+    def fake_list(**kwargs):
+        captured.update(kwargs)
+        mock_result = MagicMock()
+        mock_result.execute.return_value = {"items": []}
+        return mock_result
+
+    service.events().list = MagicMock(side_effect=fake_list)
+    mock_get_service.return_value = service
+
+    from app.gcalendar import get_events_range
+
+    get_events_range(
+        datetime(2026, 1, 1, tzinfo=TZ),
+        datetime(2026, 1, 31, tzinfo=TZ),
+        calendar_id="cycle-calendar",
+    )
+
+    assert captured["calendarId"] == "cycle-calendar"
+
+
+@patch("app.gcalendar._get_service")
+def test_create_event_uses_explicit_calendar_id(mock_get_service):
+    service = MagicMock()
+    captured = {}
+
+    def fake_insert(**kwargs):
+        captured.update(kwargs)
+        mock_result = MagicMock()
+        mock_result.execute.return_value = {"id": "event-1"}
+        return mock_result
+
+    service.events().insert = MagicMock(side_effect=fake_insert)
+    mock_get_service.return_value = service
+
+    from app.gcalendar import create_event
+
+    create_event(
+        title="Zyklusstart",
+        start_dt=datetime(2026, 8, 15, tzinfo=TZ),
+        end_dt=datetime(2026, 8, 15, tzinfo=TZ),
+        all_day=True,
+        calendar_id="cycle-calendar",
+    )
+
+    assert captured["calendarId"] == "cycle-calendar"
+
+
+@patch("app.gcalendar._get_service")
+def test_delete_event_uses_explicit_calendar_id(mock_get_service):
+    service = MagicMock()
+    captured = {}
+
+    def fake_delete(**kwargs):
+        captured.update(kwargs)
+        mock_result = MagicMock()
+        mock_result.execute.return_value = None
+        return mock_result
+
+    service.events().delete = MagicMock(side_effect=fake_delete)
+    mock_get_service.return_value = service
+
+    from app.gcalendar import delete_event
+
+    delete_event("event-1", calendar_id="cycle-calendar")
+
+    assert captured == {"calendarId": "cycle-calendar", "eventId": "event-1"}
