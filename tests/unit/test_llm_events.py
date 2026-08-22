@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 import pytest
 import httpx
 
-from app.llm_events import LLMEventError, parse_natural_event
+from app.llm_events import LLMEventError, parse_natural_event, parse_natural_sex_proposal
 
 TZ = ZoneInfo("Europe/Zurich")
 
@@ -124,3 +124,44 @@ def test_parse_natural_event_reports_network_error():
     with patch("app.llm_events.httpx.post", side_effect=httpx.ConnectError("dns failed")):
         with pytest.raises(LLMEventError, match="nicht erreichbar"):
             parse_natural_event("morgen Zahnarzt")
+
+
+def test_parse_natural_sex_proposal_maps_relative_date_and_style():
+    with patch("app.llm_events.httpx.post", return_value=_response(
+        '{"is_valid": true, "date": "2026-08-26", "time": "21:00", "style": "schmutzig"}'
+    )) as mock_post:
+        proposal = parse_natural_sex_proposal(
+            "nächsten Mittwoch um 21:00 - frivol",
+            now=datetime(2026, 8, 22, 9, 0, tzinfo=TZ),
+        )
+
+    assert proposal.start_dt.isoformat() == "2026-08-26T21:00:00+02:00"
+    assert proposal.style == "schmutzig"
+    assert mock_post.call_args.kwargs["json"]["model"] == "test-model"
+
+
+def test_parse_natural_sex_proposal_accepts_missing_style():
+    with patch("app.llm_events.httpx.post", return_value=_response(
+        '{"is_valid": true, "date": "2026-08-26", "time": "21:00", "style": null}'
+    )):
+        proposal = parse_natural_sex_proposal("nächsten Mittwoch um 21:00")
+
+    assert proposal.start_dt.isoformat() == "2026-08-26T21:00:00+02:00"
+    assert proposal.style is None
+
+
+def test_parse_natural_sex_proposal_canonicalizes_synonym_from_payload():
+    with patch("app.llm_events.httpx.post", return_value=_response(
+        '{"is_valid": true, "date": "2026-08-26", "time": "21:00", "style": "frivol"}'
+    )):
+        proposal = parse_natural_sex_proposal("nächsten Mittwoch um 21:00 - frivol")
+
+    assert proposal.style == "schmutzig"
+
+
+def test_parse_natural_sex_proposal_rejects_incomplete_proposal():
+    with patch("app.llm_events.httpx.post", return_value=_response(
+        '{"is_valid": false, "date": null, "time": null, "style": null}'
+    )):
+        with pytest.raises(LLMEventError, match="Kein vollständiger Vorschlag"):
+            parse_natural_sex_proposal("irgendwann")

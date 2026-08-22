@@ -28,7 +28,7 @@ from app.cycle import (
     replace_predicted_cycle_event,
     schedule_intimacy_event,
 )
-from app.llm_events import LLMEventError, ParsedEvent, parse_natural_event
+from app.llm_events import LLMEventError, ParsedEvent, parse_natural_event, parse_natural_sex_proposal
 from app.notes import add_note
 from app.meals import get_plan, set_meal, delete_meal, get_meal_list, add_to_meal_list
 
@@ -77,7 +77,17 @@ def _sender_name(update: Update) -> str:
 SEX_STYLES = ["romantisch", "sanft", "impulsiv", "schmutzig", "Überraschung"]
 SEX_STYLE_ALIASES = {str(i): style for i, style in enumerate(SEX_STYLES, start=1)} | {
     style.lower(): style for style in SEX_STYLES
-} | {"ueberraschung": "Überraschung"}
+} | {
+    "ueberraschung": "Überraschung",
+    "überraschend": "Überraschung",
+    "zärtlich": "sanft",
+    "zaertlich": "sanft",
+    "wild": "impulsiv",
+    "spontan": "impulsiv",
+    "frivol": "schmutzig",
+    "dirty": "schmutzig",
+    "versaut": "schmutzig",
+}
 SEX_STYLE_PROMPT = "Welcher Stil?\n1 romantisch\n2 sanft\n3 impulsiv\n4 schmutzig\n5 Überraschung"
 PENDING_SEX_PROPOSALS: dict[int, dict] = {}
 
@@ -97,7 +107,7 @@ def _format_intimacy_when(start_dt: datetime) -> str:
 def _format_intimacy_notification(title: str, start_dt: datetime) -> str:
     return (
         f"❤️ Zeit zu zweit vorgeschlagen\n{title}\n{_format_intimacy_when(start_dt)}\n"
-        "Antwort: Ja, heute nicht oder vielleicht"
+        "Antwort: 1 Ja, 2 ein andermal, 3 vielleicht"
     )
 
 
@@ -529,17 +539,18 @@ async def receive_sex_confirmation(update: Update, context) -> None:
         return
 
     answer = update.message.text.strip().lower()
+    answer = {"1": "ja", "2": "ein andermal", "3": "vielleicht"}.get(answer, answer)
     bot = getattr(context, "bot", None)
     proposer_chat_id = proposal.get("proposer_chat_id")
-    if answer == "heute nicht":
+    if answer == "ein andermal":
         PENDING_SEX_PROPOSALS.pop(chat_id, None)
         await update.message.reply_text("Alles klar.")
         if bot is not None and proposer_chat_id is not None:
-            await bot.send_message(chat_id=proposer_chat_id, text="Heute nicht.")
+            await bot.send_message(chat_id=proposer_chat_id, text="Ein andermal.")
         return
 
     if answer not in {"ja", "vielleicht"}:
-        await update.message.reply_text("Bitte mit Ja, heute nicht oder vielleicht antworten.")
+        await update.message.reply_text("Bitte mit 1, 2 oder 3 antworten.")
         return
 
     title = proposal["title"]
@@ -566,37 +577,52 @@ async def receive_sex_confirmation(update: Update, context) -> None:
         await bot.send_message(chat_id=proposer_chat_id, text=notify_text)
 
 
-async def cmd_sex(update: Update, context) -> int:
-    args = context.args
-    if len(args) < 2:
-        await update.message.reply_text("Verwendung: /sex TT.MM HH:MM")
-        return ConversationHandler.END
-
-    try:
-        event_date = parse_date(args[0])
-    except ValueError:
-        await update.message.reply_text("❌ Ungültiges Datum. Format: TT.MM oder TT.MM.JJJJ")
-        return ConversationHandler.END
-
-    try:
-        event_time = parse_time(args[1])
-    except ValueError:
-        await update.message.reply_text("❌ Ungültige Uhrzeit. Format: HH:MM oder H:MM")
-        return ConversationHandler.END
-
-    start_dt = datetime.combine(event_date, event_time, tzinfo=TZ)
-    style_text = " ".join(args[2:]).strip()
-    if not style_text:
+async def _start_intimacy_proposal(update: Update, context, start_dt: datetime, style: str | None) -> int:
+    if style is None:
         context.user_data["sex_start_dt"] = start_dt
         await update.message.reply_text(SEX_STYLE_PROMPT)
         return SEX_STYLE
+    return await _send_intimacy_proposal(update, context, start_dt, style)
 
-    style = _parse_sex_style(style_text)
-    if style is None:
-        await update.message.reply_text("Bitte mit 1, 2, 3, 4 oder 5 antworten.")
+
+def _parse_structured_sex_args(args: list[str]) -> tuple[datetime, str | None] | None:
+    if len(args) < 2:
+        return None
+    try:
+        event_date = parse_date(args[0])
+        event_time = parse_time(args[1])
+    except ValueError:
+        return None
+    return datetime.combine(event_date, event_time, tzinfo=TZ), " ".join(args[2:]).strip() or None
+
+
+async def cmd_sex(update: Update, context) -> int:
+    args = context.args
+    text = " ".join(args).strip()
+    if not text:
+        await update.message.reply_text("Verwendung: /sex TT.MM HH:MM [Stil] oder /sex nächsten Mittwoch um 21:00 - frivol")
         return ConversationHandler.END
 
-    return await _send_intimacy_proposal(update, context, start_dt, style)
+    parsed_args = _parse_structured_sex_args(args)
+    if parsed_args is not None:
+        start_dt, style_text = parsed_args
+        style = _parse_sex_style(style_text) if style_text else None
+        if style_text and style is None:
+            await update.message.reply_text("Bitte mit 1, 2, 3, 4 oder 5 antworten.")
+            return ConversationHandler.END
+        return await _start_intimacy_proposal(update, context, start_dt, style)
+
+    try:
+        parsed = parse_natural_sex_proposal(text)
+    except LLMEventError as exc:
+        await update.message.reply_text(f"❌ {exc}")
+        return ConversationHandler.END
+    except Exception as exc:
+        logger.error("parse_natural_sex_proposal failed: %s", exc)
+        await update.message.reply_text("❌ Ich konnte den Vorschlag gerade nicht auswerten.")
+        return ConversationHandler.END
+
+    return await _start_intimacy_proposal(update, context, parsed.start_dt, parsed.style)
 
 
 async def receive_sex_style(update: Update, context) -> int:
@@ -980,7 +1006,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("periodnext", cmd_periodnext, filters=allowed))
     app.add_handler(CommandHandler("today", cmd_today, filters=allowed))
     app.add_handler(CommandHandler("week", cmd_week, filters=allowed))
-    app.add_handler(MessageHandler(filters.Regex(r"^(?i:ja|heute nicht|vielleicht)$") & allowed, receive_sex_confirmation))
+    app.add_handler(MessageHandler(filters.Regex(r"^(?i:1|2|3|ja|ein andermal|vielleicht)$") & allowed, receive_sex_confirmation))
     app.add_handler(_build_conversation_handler(allowed))
     app.add_handler(_build_sex_handler(allowed))
     app.add_handler(_build_natural_event_handler(allowed))

@@ -22,6 +22,28 @@ class ParsedEvent:
     all_day: bool = False
 
 
+@dataclass(frozen=True)
+class ParsedSexProposal:
+    start_dt: datetime
+    style: str | None = None
+
+
+SEX_STYLES = ["romantisch", "sanft", "impulsiv", "schmutzig", "Überraschung"]
+SEX_STYLE_ALIASES = {style.lower(): style for style in SEX_STYLES} | {
+    "ueberraschung": "Überraschung",
+    "überraschend": "Überraschung",
+    "surprise": "Überraschung",
+    "zärtlich": "sanft",
+    "zaertlich": "sanft",
+    "lieb": "sanft",
+    "wild": "impulsiv",
+    "spontan": "impulsiv",
+    "frivol": "schmutzig",
+    "dirty": "schmutzig",
+    "versaut": "schmutzig",
+}
+
+
 def _parse_date(value: str) -> date:
     try:
         return date.fromisoformat(value)
@@ -110,32 +132,34 @@ def _payload_to_event(payload: dict) -> ParsedEvent:
     return ParsedEvent(title=title, start_dt=start_dt, end_dt=end_dt, description=description, all_day=False)
 
 
-def parse_natural_event(text: str, now: datetime | None = None) -> ParsedEvent:
+def _canonical_sex_style(value: str | None) -> str | None:
+    if not value:
+        return None
+    return SEX_STYLE_ALIASES.get(str(value).strip().lower())
+
+
+def _payload_to_sex_proposal(payload: dict) -> ParsedSexProposal:
+    if not payload.get("is_valid"):
+        raise LLMEventError("Kein vollständiger Vorschlag erkannt.")
+
+    event_date = _parse_date(payload.get("date"))
+    event_time = _parse_time(payload.get("time"))
+    if event_time is None:
+        raise LLMEventError("Keine Uhrzeit erkannt.")
+
+    return ParsedSexProposal(
+        start_dt=datetime.combine(event_date, event_time, tzinfo=TZ),
+        style=_canonical_sex_style(payload.get("style")),
+    )
+
+
+def _chat_completion_json(system: str, user: str) -> dict:
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise LLMEventError("OPENAI_API_KEY ist nicht konfiguriert.")
 
-    now = now or datetime.now(TZ)
     model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini").strip()
     base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-
-    system = (
-        "Du extrahierst Kalendereinträge aus deutschen Telegram-Nachrichten. "
-        "Antworte ausschließlich als JSON-Objekt mit diesen Feldern: "
-        "is_event boolean, title string, date YYYY-MM-DD oder null, end_date YYYY-MM-DD oder null, "
-        "start_time HH:MM oder null, end_time HH:MM oder null, "
-        "all_day boolean, description string. "
-        "Wenn kein klarer Terminwunsch erkennbar ist, setze is_event auf false. "
-        "Setze end_date nur, wenn die Nachricht ausdrücklich einen mehrtägigen Termin nennt. "
-        "Bei mehrtägigen ganztägigen Terminen ist end_date das letzte inklusive Datum. "
-        "Bei Terminen mit Startzeit aber ohne Dauer/Ende lasse end_time null. "
-        "Nutze Europe/Zurich und das Referenzdatum für relative Angaben."
-    )
-    user = (
-        f"Referenzdatum: {now.date().isoformat()}\n"
-        f"Aktueller Wochentag: {now.strftime('%A')}\n"
-        f"Nachricht: {text}"
-    )
 
     try:
         response = httpx.post(
@@ -160,4 +184,50 @@ def parse_natural_event(text: str, now: datetime | None = None) -> ParsedEvent:
         content = response.json()["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise LLMEventError("Unerwartete Antwort von OpenAI.") from exc
-    return _payload_to_event(_extract_json(content))
+    return _extract_json(content)
+
+
+def parse_natural_event(text: str, now: datetime | None = None) -> ParsedEvent:
+    now = now or datetime.now(TZ)
+    system = (
+        "Du extrahierst Kalendereinträge aus deutschen Telegram-Nachrichten. "
+        "Antworte ausschließlich als JSON-Objekt mit diesen Feldern: "
+        "is_event boolean, title string, date YYYY-MM-DD oder null, end_date YYYY-MM-DD oder null, "
+        "start_time HH:MM oder null, end_time HH:MM oder null, "
+        "all_day boolean, description string. "
+        "Wenn kein klarer Terminwunsch erkennbar ist, setze is_event auf false. "
+        "Setze end_date nur, wenn die Nachricht ausdrücklich einen mehrtägigen Termin nennt. "
+        "Bei mehrtägigen ganztägigen Terminen ist end_date das letzte inklusive Datum. "
+        "Bei Terminen mit Startzeit aber ohne Dauer/Ende lasse end_time null. "
+        "Nutze Europe/Zurich und das Referenzdatum für relative Angaben."
+    )
+    user = (
+        f"Referenzdatum: {now.date().isoformat()}\n"
+        f"Aktueller Wochentag: {now.strftime('%A')}\n"
+        f"Nachricht: {text}"
+    )
+
+    return _payload_to_event(_chat_completion_json(system, user))
+
+
+def parse_natural_sex_proposal(text: str, now: datetime | None = None) -> ParsedSexProposal:
+    now = now or datetime.now(TZ)
+    system = (
+        "Du extrahierst einen privaten Terminvorschlag aus einer deutschen Telegram-Nachricht. "
+        "Antworte ausschließlich als JSON-Objekt mit diesen Feldern: "
+        "is_valid boolean, date YYYY-MM-DD oder null, time HH:MM oder null, style string oder null. "
+        "Ein Vorschlag ist nur gültig, wenn Datum und Uhrzeit klar erkennbar sind. "
+        "Der Stil muss, wenn er erkannt wird, exakt einer dieser Werte sein: "
+        "romantisch, sanft, impulsiv, schmutzig, Überraschung. "
+        "Ordne Synonyme passend zu, z.B. frivol, dirty oder versaut zu schmutzig; "
+        "wild oder spontan zu impulsiv; zärtlich zu sanft. "
+        "Wenn kein Stil genannt oder er unklar ist, setze style auf null. "
+        "Nutze Europe/Zurich und das Referenzdatum für relative Angaben."
+    )
+    user = (
+        f"Referenzdatum: {now.date().isoformat()}\n"
+        f"Aktueller Wochentag: {now.strftime('%A')}\n"
+        f"Nachricht: {text}"
+    )
+
+    return _payload_to_sex_proposal(_chat_completion_json(system, user))

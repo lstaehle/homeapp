@@ -29,7 +29,7 @@ from app.bot import (
     receive_time,
 )
 from app.cycle import CycleError
-from app.llm_events import ParsedEvent
+from app.llm_events import ParsedEvent, ParsedSexProposal, LLMEventError
 from telegram.ext import ConversationHandler
 
 TZ = ZoneInfo("Europe/Zurich")
@@ -351,7 +351,7 @@ async def test_sex_with_style_sends_proposal_without_calendar_write(chat_ids):
     assert send_kwargs["chat_id"] == 222
     assert "Zeit zu zweit vorgeschlagen" in send_kwargs["text"]
     assert "Wir zwei - romantisch" in send_kwargs["text"]
-    assert "Antwort: Ja, heute nicht oder vielleicht" in send_kwargs["text"]
+    assert "Antwort: 1 Ja, 2 ein andermal, 3 vielleicht" in send_kwargs["text"]
     assert "Vorschlag gesendet" in update.message.reply_text.await_args.args[0]
 
 
@@ -367,6 +367,53 @@ async def test_sex_without_style_prompts_for_numbered_style(chat_ids):
     assert "Welcher Stil?" in prompt
     assert "1 romantisch" in prompt
     assert "5 Überraschung" in prompt
+
+
+async def test_sex_natural_language_sends_proposal_without_calendar_write(chat_ids):
+    PENDING_SEX_PROPOSALS.clear()
+    ctx = _context(args=["nächsten", "Mittwoch", "um", "21:00", "-", "frivol"])
+    update = _update("/sex nächsten Mittwoch um 21:00 - frivol", chat_id=111)
+    proposal = ParsedSexProposal(
+        start_dt=datetime(2026, 8, 26, 21, 0, tzinfo=TZ),
+        style="schmutzig",
+    )
+
+    with (
+        patch("app.bot.parse_natural_sex_proposal", return_value=proposal) as mock_parse,
+        patch("app.bot.schedule_intimacy_event") as mock_schedule,
+    ):
+        result = await cmd_sex(update, ctx)
+
+    assert result == ConversationHandler.END
+    mock_parse.assert_called_once_with("nächsten Mittwoch um 21:00 - frivol")
+    mock_schedule.assert_not_called()
+    assert PENDING_SEX_PROPOSALS[222]["title"] == "Wir zwei - schmutzig"
+    assert PENDING_SEX_PROPOSALS[222]["start_dt"].isoformat() == "2026-08-26T21:00:00+02:00"
+    assert "Wir zwei - schmutzig" in ctx.bot.send_message.await_args.kwargs["text"]
+
+
+async def test_sex_natural_language_without_style_prompts_for_numbered_style(chat_ids):
+    ctx = _context(args=["nächsten", "Mittwoch", "um", "21:00"])
+    update = _update("/sex nächsten Mittwoch um 21:00", chat_id=111)
+    proposal = ParsedSexProposal(start_dt=datetime(2026, 8, 26, 21, 0, tzinfo=TZ))
+
+    with patch("app.bot.parse_natural_sex_proposal", return_value=proposal):
+        result = await cmd_sex(update, ctx)
+
+    assert result == SEX_STYLE
+    assert ctx.user_data["sex_start_dt"].isoformat() == "2026-08-26T21:00:00+02:00"
+    assert "Welcher Stil?" in update.message.reply_text.await_args.args[0]
+
+
+async def test_sex_natural_language_parser_error_replies(chat_ids):
+    ctx = _context(args=["irgendwann"])
+    update = _update("/sex irgendwann", chat_id=111)
+
+    with patch("app.bot.parse_natural_sex_proposal", side_effect=LLMEventError("Kein vollständiger Vorschlag erkannt.")):
+        result = await cmd_sex(update, ctx)
+
+    assert result == ConversationHandler.END
+    assert "Kein vollständiger Vorschlag" in update.message.reply_text.await_args.args[0]
 
 
 async def test_sex_style_reply_number_sends_proposal(chat_ids):
@@ -386,7 +433,7 @@ async def test_sex_style_reply_number_sends_proposal(chat_ids):
 
 async def test_sex_invalid_style_keeps_prompt_state(chat_ids):
     ctx = _context(user_data={"sex_start_dt": datetime(2026, 8, 24, 21, 30, tzinfo=TZ)})
-    update = _update("wild", chat_id=111)
+    update = _update("unbekannt", chat_id=111)
 
     with patch("app.bot.schedule_intimacy_event") as mock_schedule:
         result = await receive_sex_style(update, ctx)
@@ -396,7 +443,7 @@ async def test_sex_invalid_style_keeps_prompt_state(chat_ids):
     assert "1, 2, 3, 4 oder 5" in update.message.reply_text.await_args.args[0]
 
 
-async def test_sex_confirmation_ja_saves_calendar_and_notifies_proposer(chat_ids):
+async def test_sex_confirmation_1_saves_calendar_and_notifies_proposer(chat_ids):
     PENDING_SEX_PROPOSALS.clear()
     PENDING_SEX_PROPOSALS[222] = {
         "proposer_chat_id": 111,
@@ -404,7 +451,7 @@ async def test_sex_confirmation_ja_saves_calendar_and_notifies_proposer(chat_ids
         "start_dt": datetime(2026, 8, 24, 21, 30, tzinfo=TZ),
     }
     ctx = _context()
-    update = _update("Ja", chat_id=222)
+    update = _update("1", chat_id=222)
 
     with patch("app.bot.schedule_intimacy_event") as mock_schedule:
         await receive_sex_confirmation(update, ctx)
@@ -427,7 +474,7 @@ async def test_sex_confirmation_vielleicht_saves_calendar(chat_ids):
         "start_dt": datetime(2026, 8, 24, 21, 30, tzinfo=TZ),
     }
     ctx = _context()
-    update = _update("vielleicht", chat_id=222)
+    update = _update("3", chat_id=222)
 
     with patch("app.bot.schedule_intimacy_event") as mock_schedule:
         await receive_sex_confirmation(update, ctx)
@@ -437,7 +484,7 @@ async def test_sex_confirmation_vielleicht_saves_calendar(chat_ids):
     assert "vielleicht" in update.message.reply_text.await_args.args[0].lower()
 
 
-async def test_sex_confirmation_heute_nicht_does_not_save_calendar(chat_ids):
+async def test_sex_confirmation_2_does_not_save_calendar(chat_ids):
     PENDING_SEX_PROPOSALS.clear()
     PENDING_SEX_PROPOSALS[222] = {
         "proposer_chat_id": 111,
@@ -445,7 +492,7 @@ async def test_sex_confirmation_heute_nicht_does_not_save_calendar(chat_ids):
         "start_dt": datetime(2026, 8, 24, 21, 30, tzinfo=TZ),
     }
     ctx = _context()
-    update = _update("heute nicht", chat_id=222)
+    update = _update("2", chat_id=222)
 
     with patch("app.bot.schedule_intimacy_event") as mock_schedule:
         await receive_sex_confirmation(update, ctx)
@@ -453,7 +500,7 @@ async def test_sex_confirmation_heute_nicht_does_not_save_calendar(chat_ids):
     mock_schedule.assert_not_called()
     assert 222 not in PENDING_SEX_PROPOSALS
     assert "Alles klar" in update.message.reply_text.await_args.args[0]
-    assert "Heute nicht" in ctx.bot.send_message.await_args.kwargs["text"]
+    assert "Ein andermal" in ctx.bot.send_message.await_args.kwargs["text"]
 
 
 async def test_sex_missing_cycle_calendar_id_reports_error_after_confirmation(chat_ids):
