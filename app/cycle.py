@@ -113,3 +113,14 @@ def replace_predicted_cycle_event(predicted_day: date, today: date | None = None
         all_day=True,
         calendar_id=calendar_id,
     )
+
+
+def schedule_intimacy_event(title: str, start_dt: datetime, end_dt: datetime) -> dict:
+    return create_event(
+        title=title,
+        start_dt=start_dt,
+        end_dt=end_dt,
+        description="",
+        all_day=False,
+        calendar_id=_calendar_id(),
+    )

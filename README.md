@@ -132,6 +132,7 @@ Für Kiosk-Modus (Vollbild, kein Browser-Chrome): **Fully Kiosk Browser** (Andro
 | `/eventnl <Text>` | Termin aus natürlicher Sprache erstellen |
 | `/abbrechen` | Aktuellen Dialog abbrechen |
 | `/skip` | Beschreibungsschritt überspringen |
+| `/sex TT.MM HH:MM` | Zeit zu zweit vorschlagen; Kalender erst nach Ja/vielleicht |
 | `/period [TT.MM]` | Zyklusstart im separaten Zyklus-Kalender speichern |
 | `/periodhistory` | Zyklushistorie anzeigen |
 | `/periodnext` | Nächsten Zyklusstart berechnen und als erwarteten Termin speichern |

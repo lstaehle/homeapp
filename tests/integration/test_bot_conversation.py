@@ -9,6 +9,7 @@ from app.bot import (
     DATE_TITLE,
     DESCRIPTION,
     DURATION,
+    SEX_STYLE,
     TIME_STATE,
     cmd_cancel,
     cmd_love,
@@ -16,11 +17,15 @@ from app.bot import (
     cmd_period,
     cmd_periodhistory,
     cmd_periodnext,
+    cmd_sex,
     cmd_skip_description,
+    PENDING_SEX_PROPOSALS,
     receive_confirm,
     receive_date_and_title,
     receive_duration,
     receive_natural_confirm,
+    receive_sex_confirmation,
+    receive_sex_style,
     receive_time,
 )
 from app.cycle import CycleError
@@ -328,3 +333,141 @@ async def test_love_unknown_chat_does_not_send(chat_ids):
 
     ctx.bot.send_message.assert_not_awaited()
     assert "Kein Empfänger" in update.message.reply_text.await_args.args[0]
+
+
+async def test_sex_with_style_sends_proposal_without_calendar_write(chat_ids):
+    PENDING_SEX_PROPOSALS.clear()
+    ctx = _context(args=["24.08.2026", "21:30", "romantisch"])
+    update = _update("/sex 24.08.2026 21:30 romantisch", chat_id=111)
+
+    with patch("app.bot.schedule_intimacy_event") as mock_schedule:
+        result = await cmd_sex(update, ctx)
+
+    assert result == ConversationHandler.END
+    mock_schedule.assert_not_called()
+    assert PENDING_SEX_PROPOSALS[222]["title"] == "Wir zwei - romantisch"
+    assert PENDING_SEX_PROPOSALS[222]["start_dt"].isoformat() == "2026-08-24T21:30:00+02:00"
+    send_kwargs = ctx.bot.send_message.await_args.kwargs
+    assert send_kwargs["chat_id"] == 222
+    assert "Zeit zu zweit vorgeschlagen" in send_kwargs["text"]
+    assert "Wir zwei - romantisch" in send_kwargs["text"]
+    assert "Antwort: Ja, heute nicht oder vielleicht" in send_kwargs["text"]
+    assert "Vorschlag gesendet" in update.message.reply_text.await_args.args[0]
+
+
+async def test_sex_without_style_prompts_for_numbered_style(chat_ids):
+    ctx = _context(args=["24.08.2026", "21:30"])
+    update = _update("/sex 24.08.2026 21:30", chat_id=111)
+
+    result = await cmd_sex(update, ctx)
+
+    assert result == SEX_STYLE
+    assert ctx.user_data["sex_start_dt"].isoformat() == "2026-08-24T21:30:00+02:00"
+    prompt = update.message.reply_text.await_args.args[0]
+    assert "Welcher Stil?" in prompt
+    assert "1 romantisch" in prompt
+    assert "5 Überraschung" in prompt
+
+
+async def test_sex_style_reply_number_sends_proposal(chat_ids):
+    PENDING_SEX_PROPOSALS.clear()
+    ctx = _context(user_data={"sex_start_dt": datetime(2026, 8, 24, 21, 30, tzinfo=TZ)})
+    update = _update("5", chat_id=111)
+
+    with patch("app.bot.schedule_intimacy_event") as mock_schedule:
+        result = await receive_sex_style(update, ctx)
+
+    assert result == ConversationHandler.END
+    assert "sex_start_dt" not in ctx.user_data
+    mock_schedule.assert_not_called()
+    assert PENDING_SEX_PROPOSALS[222]["title"] == "Wir zwei - Überraschung"
+    assert "Wir zwei - Überraschung" in ctx.bot.send_message.await_args.kwargs["text"]
+
+
+async def test_sex_invalid_style_keeps_prompt_state(chat_ids):
+    ctx = _context(user_data={"sex_start_dt": datetime(2026, 8, 24, 21, 30, tzinfo=TZ)})
+    update = _update("wild", chat_id=111)
+
+    with patch("app.bot.schedule_intimacy_event") as mock_schedule:
+        result = await receive_sex_style(update, ctx)
+
+    assert result == SEX_STYLE
+    mock_schedule.assert_not_called()
+    assert "1, 2, 3, 4 oder 5" in update.message.reply_text.await_args.args[0]
+
+
+async def test_sex_confirmation_ja_saves_calendar_and_notifies_proposer(chat_ids):
+    PENDING_SEX_PROPOSALS.clear()
+    PENDING_SEX_PROPOSALS[222] = {
+        "proposer_chat_id": 111,
+        "title": "Wir zwei - romantisch",
+        "start_dt": datetime(2026, 8, 24, 21, 30, tzinfo=TZ),
+    }
+    ctx = _context()
+    update = _update("Ja", chat_id=222)
+
+    with patch("app.bot.schedule_intimacy_event") as mock_schedule:
+        await receive_sex_confirmation(update, ctx)
+
+    mock_schedule.assert_called_once()
+    kwargs = mock_schedule.call_args.kwargs
+    assert kwargs["title"] == "Wir zwei - romantisch"
+    assert kwargs["start_dt"].isoformat() == "2026-08-24T21:30:00+02:00"
+    assert kwargs["end_dt"].isoformat() == "2026-08-24T22:30:00+02:00"
+    assert 222 not in PENDING_SEX_PROPOSALS
+    assert "Im Kalender gespeichert" in update.message.reply_text.await_args.args[0]
+    assert "Bestätigt" in ctx.bot.send_message.await_args.kwargs["text"]
+
+
+async def test_sex_confirmation_vielleicht_saves_calendar(chat_ids):
+    PENDING_SEX_PROPOSALS.clear()
+    PENDING_SEX_PROPOSALS[222] = {
+        "proposer_chat_id": 111,
+        "title": "Wir zwei - sanft",
+        "start_dt": datetime(2026, 8, 24, 21, 30, tzinfo=TZ),
+    }
+    ctx = _context()
+    update = _update("vielleicht", chat_id=222)
+
+    with patch("app.bot.schedule_intimacy_event") as mock_schedule:
+        await receive_sex_confirmation(update, ctx)
+
+    mock_schedule.assert_called_once()
+    assert 222 not in PENDING_SEX_PROPOSALS
+    assert "vielleicht" in update.message.reply_text.await_args.args[0].lower()
+
+
+async def test_sex_confirmation_heute_nicht_does_not_save_calendar(chat_ids):
+    PENDING_SEX_PROPOSALS.clear()
+    PENDING_SEX_PROPOSALS[222] = {
+        "proposer_chat_id": 111,
+        "title": "Wir zwei - sanft",
+        "start_dt": datetime(2026, 8, 24, 21, 30, tzinfo=TZ),
+    }
+    ctx = _context()
+    update = _update("heute nicht", chat_id=222)
+
+    with patch("app.bot.schedule_intimacy_event") as mock_schedule:
+        await receive_sex_confirmation(update, ctx)
+
+    mock_schedule.assert_not_called()
+    assert 222 not in PENDING_SEX_PROPOSALS
+    assert "Alles klar" in update.message.reply_text.await_args.args[0]
+    assert "Heute nicht" in ctx.bot.send_message.await_args.kwargs["text"]
+
+
+async def test_sex_missing_cycle_calendar_id_reports_error_after_confirmation(chat_ids):
+    PENDING_SEX_PROPOSALS.clear()
+    PENDING_SEX_PROPOSALS[222] = {
+        "proposer_chat_id": 111,
+        "title": "Wir zwei - sanft",
+        "start_dt": datetime(2026, 8, 24, 21, 30, tzinfo=TZ),
+    }
+    ctx = _context()
+    update = _update("Ja", chat_id=222)
+
+    with patch("app.bot.schedule_intimacy_event", side_effect=CycleError("CYCLE_GOOGLE_CALENDAR_ID ist nicht konfiguriert.")):
+        await receive_sex_confirmation(update, ctx)
+
+    assert "CYCLE_GOOGLE_CALENDAR_ID" in update.message.reply_text.await_args.args[0]
+    assert 222 in PENDING_SEX_PROPOSALS

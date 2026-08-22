@@ -27,6 +27,7 @@ A family coordination app for two adults and two kids (ages 7 and 5), self-hoste
 | `/abbrechen` | Cancel event creation at any step |
 | `/note <text>` | Save a note visible on the dashboard |
 | `/ping` | Liveness check |
+| `/sex TT.MM HH:MM` | Propose private time together; save to cycle calendar after Ja/vielleicht |
 | `/period [TT.MM]` | Save cycle start in the separate cycle calendar |
 | `/periodhistory` | Show recorded cycle starts and intervals |
 | `/periodnext` | Predict next cycle start and save expected event |

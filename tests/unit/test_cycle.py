@@ -98,3 +98,20 @@ def test_cycle_calendar_id_required(monkeypatch):
     monkeypatch.setenv("CYCLE_GOOGLE_CALENDAR_ID", "")
     with pytest.raises(CycleError, match="CYCLE_GOOGLE_CALENDAR_ID"):
         record_cycle_start(date(2026, 8, 15))
+
+
+def test_schedule_intimacy_event_uses_cycle_calendar():
+    start_dt = datetime(2026, 8, 24, 21, 30, tzinfo=TZ)
+    end_dt = datetime(2026, 8, 24, 22, 30, tzinfo=TZ)
+
+    with patch("app.cycle.create_event", return_value={"id": "sex-1"}) as mock_create:
+        from app.cycle import schedule_intimacy_event
+
+        schedule_intimacy_event("Wir zwei - romantisch", start_dt, end_dt)
+
+    kwargs = mock_create.call_args.kwargs
+    assert kwargs["title"] == "Wir zwei - romantisch"
+    assert kwargs["start_dt"] == start_dt
+    assert kwargs["end_dt"] == end_dt
+    assert kwargs["all_day"] is False
+    assert kwargs["calendar_id"] == "cycle-calendar"
