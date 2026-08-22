@@ -11,6 +11,7 @@ from app.bot import (
     DURATION,
     TIME_STATE,
     cmd_cancel,
+    cmd_love,
     cmd_neuesevent,
     cmd_period,
     cmd_periodhistory,
@@ -293,3 +294,37 @@ async def test_periodnext_creates_prediction():
     assert "25.08.2026" in text
     assert "Intervall: 29 Tage" in text
     assert "gespeichert" in text
+
+
+async def test_love_sends_message_to_other_chat(chat_ids):
+    ctx = _context(args=["Ich", "denke", "an", "dich"])
+    update = _update('/love Ich denke an dich', chat_id=111, first_name="Lorenz")
+
+    await cmd_love(update, ctx)
+
+    ctx.bot.send_message.assert_awaited_once()
+    kwargs = ctx.bot.send_message.await_args.kwargs
+    assert kwargs["chat_id"] == 222
+    assert "Liebesnachricht von Lorenz" in kwargs["text"]
+    assert "Ich denke an dich" in kwargs["text"]
+    assert "Gesendet" in update.message.reply_text.await_args.args[0]
+
+
+async def test_love_requires_message_text(chat_ids):
+    ctx = _context(args=[])
+    update = _update('/love', chat_id=111)
+
+    await cmd_love(update, ctx)
+
+    ctx.bot.send_message.assert_not_awaited()
+    assert "Bitte einen Text" in update.message.reply_text.await_args.args[0]
+
+
+async def test_love_unknown_chat_does_not_send(chat_ids):
+    ctx = _context(args=["Hallo"])
+    update = _update('/love Hallo', chat_id=999)
+
+    await cmd_love(update, ctx)
+
+    ctx.bot.send_message.assert_not_awaited()
+    assert "Kein Empfänger" in update.message.reply_text.await_args.args[0]

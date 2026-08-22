@@ -502,6 +502,37 @@ async def _error_handler(update: object, context) -> None:
     logger.error("PTB error", exc_info=context.error)
 
 
+async def cmd_love(update: Update, context) -> None:
+    text = " ".join(context.args).strip()
+    if not text:
+        await update.message.reply_text('Bitte einen Text angeben, z.B.: /love Ich denke an dich')
+        return
+
+    chat = getattr(update, "effective_chat", None)
+    target_chat_id = _notification_target_chat_id(getattr(chat, "id", None))
+    if target_chat_id is None:
+        await update.message.reply_text("❌ Kein Empfänger konfiguriert.")
+        return
+
+    bot = getattr(context, "bot", None)
+    if bot is None:
+        await update.message.reply_text("❌ Bot ist gerade nicht verfügbar.")
+        return
+
+    sender = _sender_name(update)
+    try:
+        await bot.send_message(
+            chat_id=target_chat_id,
+            text=f"❤️ Liebesnachricht von {sender}:\n{text}",
+        )
+    except Exception as exc:
+        logger.error("Failed to send love message: %s", exc)
+        await update.message.reply_text("❌ Liebesnachricht konnte nicht gesendet werden.")
+        return
+
+    await update.message.reply_text("❤️ Gesendet.")
+
+
 async def cmd_note(update: Update, context) -> None:
     text = " ".join(context.args).strip()
     if not text:
@@ -735,7 +766,8 @@ async def cmd_help(update: Update, context) -> None:
         "/delmeal TT.MM — Mahlzeit löschen\n"
         "/meals — Menüplan diese Woche\n\n"
         "📌 *Notizen*\n"
-        "/note Text — Notiz speichern\n\n"
+        "/note Text — Notiz speichern\n"
+        "/love Text — Liebesnachricht senden\n\n"
         "🌙 *Zyklus*\n"
         "/period — Zyklusstart heute speichern\n"
         "/period TT.MM — Zyklusstart für Datum speichern\n"
@@ -767,6 +799,7 @@ def build_application() -> Application:
 
     app.add_handler(CommandHandler("help", cmd_help, filters=allowed))
     app.add_handler(CommandHandler("ping", cmd_ping, filters=allowed))
+    app.add_handler(CommandHandler("love", cmd_love, filters=allowed))
     app.add_handler(CommandHandler("note", cmd_note, filters=allowed))
     app.add_handler(CommandHandler("meal", cmd_meal, filters=allowed))
     app.add_handler(CommandHandler("delmeal", cmd_delmeal, filters=allowed))
