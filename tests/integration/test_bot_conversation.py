@@ -20,6 +20,7 @@ from app.bot import (
     cmd_sex,
     cmd_skip_description,
     PENDING_SEX_PROPOSALS,
+    _PendingSexProposalFilter,
     receive_confirm,
     receive_date_and_title,
     receive_duration,
@@ -38,6 +39,7 @@ TZ = ZoneInfo("Europe/Zurich")
 def _update(text: str, chat_id: int = 111, first_name: str = "Lorenz"):
     u = MagicMock()
     u.message.text = text
+    u.message.chat_id = chat_id
     u.message.reply_text = AsyncMock()
     u.effective_chat.id = chat_id
     u.effective_user.first_name = first_name
@@ -110,6 +112,19 @@ async def test_guided_event_notifies_other_chat_after_confirmation(chat_ids):
     assert kwargs["chat_id"] == 222
     assert "Kindergeburtstag" in kwargs["text"]
     assert "25.12.2026, 14:00-16:00" in kwargs["text"]
+
+
+def test_sex_confirmation_filter_only_matches_pending_proposals(chat_ids):
+    PENDING_SEX_PROPOSALS.clear()
+    assert _PendingSexProposalFilter().filter(_update("Ja", chat_id=222).message) is False
+
+    PENDING_SEX_PROPOSALS[222] = {
+        "proposer_chat_id": 111,
+        "title": "Wir zwei - romantisch",
+        "start_dt": datetime(2026, 8, 24, 21, 30, tzinfo=TZ),
+    }
+
+    assert _PendingSexProposalFilter().filter(_update("Ja", chat_id=222).message) is True
 
 
 async def test_natural_event_notifies_reverse_direction(chat_ids):

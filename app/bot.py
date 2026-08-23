@@ -92,6 +92,15 @@ SEX_STYLE_PROMPT = "Welcher Stil?\n1 romantisch\n2 sanft\n3 impulsiv\n4 schmutzi
 PENDING_SEX_PROPOSALS: dict[int, dict] = {}
 
 
+class _PendingSexProposalFilter(filters.MessageFilter):
+    def filter(self, message) -> bool:
+        chat_id = getattr(message, "chat_id", None)
+        if chat_id is None:
+            chat = getattr(message, "chat", None)
+            chat_id = getattr(chat, "id", None)
+        return chat_id in PENDING_SEX_PROPOSALS
+
+
 def _parse_sex_style(text: str) -> str | None:
     return SEX_STYLE_ALIASES.get(text.strip().lower())
 
@@ -1006,7 +1015,8 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("periodnext", cmd_periodnext, filters=allowed))
     app.add_handler(CommandHandler("today", cmd_today, filters=allowed))
     app.add_handler(CommandHandler("week", cmd_week, filters=allowed))
-    app.add_handler(MessageHandler(filters.Regex(r"^(?i:1|2|3|ja|klar|ok|okay|ein andermal|vielleicht)$") & allowed, receive_sex_confirmation))
+    sex_confirmation = filters.Regex(r"^(?i:1|2|3|ja|klar|ok|okay|ein andermal|vielleicht)$") & _PendingSexProposalFilter()
+    app.add_handler(MessageHandler(sex_confirmation & allowed, receive_sex_confirmation))
     app.add_handler(_build_conversation_handler(allowed))
     app.add_handler(_build_sex_handler(allowed))
     app.add_handler(_build_natural_event_handler(allowed))
