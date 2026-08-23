@@ -466,6 +466,25 @@ async def test_sex_confirmation_1_saves_calendar_and_notifies_proposer(chat_ids)
     assert "Bestätigt" in ctx.bot.send_message.await_args.kwargs["text"]
 
 
+async def test_sex_confirmation_klar_saves_calendar_and_notifies_proposer(chat_ids):
+    PENDING_SEX_PROPOSALS.clear()
+    PENDING_SEX_PROPOSALS[222] = {
+        "proposer_chat_id": 111,
+        "title": "Wir zwei - romantisch",
+        "start_dt": datetime(2026, 8, 24, 21, 30, tzinfo=TZ),
+    }
+    ctx = _context()
+    update = _update("klar", chat_id=222)
+
+    with patch("app.bot.schedule_intimacy_event") as mock_schedule:
+        await receive_sex_confirmation(update, ctx)
+
+    mock_schedule.assert_called_once()
+    assert 222 not in PENDING_SEX_PROPOSALS
+    assert "Im Kalender gespeichert" in update.message.reply_text.await_args.args[0]
+    assert "Bestätigt" in ctx.bot.send_message.await_args.kwargs["text"]
+
+
 async def test_sex_confirmation_vielleicht_saves_calendar(chat_ids):
     PENDING_SEX_PROPOSALS.clear()
     PENDING_SEX_PROPOSALS[222] = {

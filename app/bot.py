@@ -539,7 +539,7 @@ async def receive_sex_confirmation(update: Update, context) -> None:
         return
 
     answer = update.message.text.strip().lower()
-    answer = {"1": "ja", "2": "ein andermal", "3": "vielleicht"}.get(answer, answer)
+    answer = {"1": "ja", "klar": "ja", "ok": "ja", "okay": "ja", "2": "ein andermal", "3": "vielleicht"}.get(answer, answer)
     bot = getattr(context, "bot", None)
     proposer_chat_id = proposal.get("proposer_chat_id")
     if answer == "ein andermal":
@@ -1006,7 +1006,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("periodnext", cmd_periodnext, filters=allowed))
     app.add_handler(CommandHandler("today", cmd_today, filters=allowed))
     app.add_handler(CommandHandler("week", cmd_week, filters=allowed))
-    app.add_handler(MessageHandler(filters.Regex(r"^(?i:1|2|3|ja|ein andermal|vielleicht)$") & allowed, receive_sex_confirmation))
+    app.add_handler(MessageHandler(filters.Regex(r"^(?i:1|2|3|ja|klar|ok|okay|ein andermal|vielleicht)$") & allowed, receive_sex_confirmation))
     app.add_handler(_build_conversation_handler(allowed))
     app.add_handler(_build_sex_handler(allowed))
     app.add_handler(_build_natural_event_handler(allowed))
