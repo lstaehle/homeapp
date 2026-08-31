@@ -1,6 +1,14 @@
 from datetime import date
+from unittest.mock import MagicMock, patch
 
-from app.reminders import format_daily_message, format_weekly_message
+from app.reminders import (
+    REMINDER_MISFIRE_GRACE_SECONDS,
+    daily_reminder,
+    format_daily_message,
+    format_weekly_message,
+    register_jobs,
+    weekly_reminder,
+)
 
 
 def _event(title: str, start: str) -> dict:
@@ -68,3 +76,19 @@ def test_weekly_message_multiple_days():
     assert "Event B" in msg
     assert "Event C" in msg
     assert msg.index("Montag") < msg.index("Mittwoch") < msg.index("Freitag")
+
+
+def test_register_jobs_sets_misfire_grace_time():
+    scheduler = MagicMock()
+    bot = MagicMock()
+
+    with patch("app.reminders.get_scheduler", return_value=scheduler):
+        register_jobs(bot)
+
+    assert scheduler.add_job.call_count == 2
+    daily_call, weekly_call = scheduler.add_job.call_args_list
+    assert daily_call.args[:2] == (daily_reminder, "cron")
+    assert daily_call.kwargs["misfire_grace_time"] == REMINDER_MISFIRE_GRACE_SECONDS
+    assert weekly_call.args[:2] == (weekly_reminder, "cron")
+    assert weekly_call.kwargs["day_of_week"] == "mon"
+    assert weekly_call.kwargs["misfire_grace_time"] == REMINDER_MISFIRE_GRACE_SECONDS

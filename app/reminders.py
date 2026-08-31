@@ -13,6 +13,7 @@ TZ = ZoneInfo("Europe/Zurich")
 GERMAN_DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
 logger = logging.getLogger(__name__)
+REMINDER_MISFIRE_GRACE_SECONDS = 300
 
 
 def _parse_start(event: dict) -> tuple[date, str]:
@@ -103,5 +104,22 @@ async def weekly_reminder(bot: Bot) -> None:
 
 def register_jobs(bot: Bot) -> None:
     scheduler = get_scheduler()
-    scheduler.add_job(daily_reminder, "cron", hour=6, minute=0, args=[bot], id="daily_reminder")
-    scheduler.add_job(weekly_reminder, "cron", day_of_week="mon", hour=6, minute=0, args=[bot], id="weekly_reminder")
+    scheduler.add_job(
+        daily_reminder,
+        "cron",
+        hour=6,
+        minute=0,
+        args=[bot],
+        id="daily_reminder",
+        misfire_grace_time=REMINDER_MISFIRE_GRACE_SECONDS,
+    )
+    scheduler.add_job(
+        weekly_reminder,
+        "cron",
+        day_of_week="mon",
+        hour=6,
+        minute=0,
+        args=[bot],
+        id="weekly_reminder",
+        misfire_grace_time=REMINDER_MISFIRE_GRACE_SECONDS,
+    )
