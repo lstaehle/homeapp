@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from telegram import Update
+from telegram.error import RetryAfter
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -46,19 +47,28 @@ async def _poll_telegram(bot_app) -> None:
     """Manual polling loop running in uvicorn's event loop — avoids PTB/uvicorn asyncio conflicts."""
     await bot_app.bot.delete_webhook()
     offset: int | None = None
+    retry_delay = 1
     while True:
         try:
             updates = await bot_app.bot.get_updates(
                 offset=offset, timeout=10, allowed_updates=Update.ALL_TYPES
             )
+            retry_delay = 1
             for update in updates:
                 offset = update.update_id + 1
                 asyncio.create_task(bot_app.process_update(update))
         except asyncio.CancelledError:
             raise
+        except RetryAfter as exc:
+            requested = exc.retry_after
+            seconds = requested.total_seconds() if isinstance(requested, timedelta) else requested
+            delay = max(0, seconds) + 1
+            logger.warning("Telegram rate limited polling; retrying in %s seconds", delay)
+            await asyncio.sleep(delay)
         except Exception as exc:
-            logger.error("Telegram polling error: %s", exc)
-            await asyncio.sleep(1)
+            logger.warning("Telegram polling error: %s; retrying in %s seconds", exc, retry_delay)
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 60)
 
 
 @asynccontextmanager
